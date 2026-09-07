@@ -1,10 +1,11 @@
 /**
- * Vercel serverless API: import sushi menu items from a restaurant URL or pasted text.
+ * Vercel serverless API: import sushi menu items from a restaurant URL,
+ * pasted text, or photo/PDF upload.
  *
  * Flow:
- * 1) Fetch page HTML (URL) or use pasted text
+ * 1) Fetch page HTML / PDF (URL), use pasted text, or accept uploaded media
  * 2) If Chowbus-style JSON is embedded, extract name + price directly (divide by pcs)
- * 3) Otherwise ask Gemini to extract items + typical à la carte $/piece estimates
+ * 3) Otherwise ask Gemini (text or multimodal) to extract items + $/piece estimates
  * 4) Return cleaned JSON to the browser
  *
  * Required env (set in Vercel project settings — never commit the real key):
@@ -14,12 +15,26 @@
  */
 
 const MAX_BODY_CHARS = 80_000
+const MAX_UPLOAD_BODY_CHARS = Math.floor(3.8 * 1024 * 1024)
+const MAX_FILE_BASE64_CHARS = Math.floor(3.5 * 1024 * 1024)
+const MAX_FILE_BYTES = Math.floor(2.6 * 1024 * 1024)
 const MAX_PAGE_CHARS = 40_000
 const MAX_MENU_ITEMS = 80
 const CHOWBUS_MIN_ITEMS = 8
 const FETCH_TIMEOUT_MS = 12_000
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX = 8
+
+const ALLOWED_MEDIA_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/heic',
+  'image/heif',
+])
 
 /** Simple in-memory rate limit (resets when the serverless instance recycles). */
 const rateBuckets = new Map()
@@ -50,6 +65,24 @@ function isValidHttpUrl(value) {
     return parsed.protocol === 'http:' || parsed.protocol === 'https:'
   } catch {
     return false
+  }
+}
+
+function normalizeMimeType(value) {
+  const raw = String(value || '')
+    .split(';')[0]
+    .trim()
+    .toLowerCase()
+  if (raw === 'image/jpg') return 'image/jpeg'
+  return raw
+}
+
+function isPdfUrl(url) {
+  try {
+    const path = new URL(url).pathname.toLowerCase()
+    return path.endsWith('.pdf')
+  } catch {
+    return /\.pdf(\?|#|$)/i.test(String(url || ''))
   }
 }
 
@@ -165,6 +198,10 @@ function formatStructuredMenuText(items) {
     .join('\n')
 }
 
+function bufferToBase64(buffer) {
+  return Buffer.from(buffer).toString('base64')
+}
+
 async function fetchPage(url) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
@@ -175,31 +212,51 @@ async function fetchPage(url) {
       headers: {
         'User-Agent':
           'WorthBiteMenuBot/1.0 (+https://vercel.app; AYCE sushi worth-it calculator)',
-        Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
+        Accept:
+          'text/html,application/xhtml+xml,application/pdf,text/plain;q=0.9,image/*;q=0.8,*/*;q=0.7',
       },
     })
     if (!response.ok) {
       throw new Error(`Could not load that page (HTTP ${response.status}).`)
     }
-    const contentType = response.headers.get('content-type') || ''
+    const contentType = normalizeMimeType(response.headers.get('content-type') || '')
+    const treatAsPdf = contentType === 'application/pdf' || isPdfUrl(url)
+
+    if (treatAsPdf) {
+      const bytes = Buffer.from(await response.arrayBuffer())
+      if (bytes.length > MAX_FILE_BYTES) {
+        throw new Error('That PDF is too large. Try uploading a smaller file or photo.')
+      }
+      if (bytes.length < 20) {
+        throw new Error('That PDF looked empty. Try another link or upload the file.')
+      }
+      return {
+        kind: 'pdf',
+        text: '',
+        structured: [],
+        media: { mimeType: 'application/pdf', base64: bufferToBase64(bytes) },
+      }
+    }
+
     if (
       contentType &&
       !/text\/html|text\/plain|application\/xhtml\+xml|application\/json/i.test(contentType)
     ) {
-      throw new Error('That URL does not look like a menu web page.')
+      throw new Error('That URL does not look like a menu web page or PDF.')
     }
+
     const html = await response.text()
     const structured = extractChowbusMenuItems(html)
     const text = htmlToPlainText(html).slice(0, MAX_PAGE_CHARS)
     if (structured.length < CHOWBUS_MIN_ITEMS && text.length < 40) {
       throw new Error(
-        'The page had almost no readable text (often a JavaScript-only menu). Paste the menu text instead.',
+        'The page had almost no readable text (often a JavaScript-only menu). Upload a photo/PDF or paste the menu text instead.',
       )
     }
-    return { html, text, structured }
+    return { kind: 'html', html, text, structured, media: null }
   } catch (err) {
     if (err.name === 'AbortError') {
-      throw new Error('Timed out loading that website. Try again or paste menu text.')
+      throw new Error('Timed out loading that website. Try again, upload a photo/PDF, or paste menu text.')
     }
     throw err
   } finally {
@@ -220,7 +277,7 @@ function countPriceSignals(text) {
 function assertUsableMenuSource(text, { requirePrices }) {
   if (requirePrices && countPriceSignals(text) < 2) {
     throw new Error(
-      'That page does not look like a priced restaurant menu. Paste the menu text (dish names and prices) instead.',
+      'That page does not look like a priced restaurant menu. Upload a photo/PDF or paste the menu text instead.',
     )
   }
 }
@@ -260,29 +317,32 @@ function groundItemsInSource(items, menuText) {
   return items.filter((item) => itemGroundedInSource(item.name, sourceLower))
 }
 
-function buildPrompt(sourceLabel, menuText) {
-  return `You extract sushi / Japanese restaurant menu items for an all-you-can-eat worth-it calculator.
+function buildPrompt(sourceLabel, { hasMedia = false, menuText = '' } = {}) {
+  const sourceBlock = hasMedia
+    ? `The restaurant menu is attached as an image or PDF. Extract dishes that are clearly listed there.`
+    : `Menu text:\n${menuText}`
+
+  return `You extract Japanese restaurant / AYCE menu items for a worth-it calculator.
 
 Source: ${sourceLabel}
 
-From the text below, return ONLY valid JSON (no markdown) with this shape:
+From the menu, return ONLY valid JSON (no markdown) with this shape:
 {"isRestaurantMenu":true,"items":[{"name":"Salmon Nigiri","pricePerPiece":3.5}]}
 
 Rules:
-- isRestaurantMenu must be true ONLY if the text is clearly a restaurant menu / dish listing (item names people order). If it is an article, homepage, blog, wiki, marketing page, or anything else, set isRestaurantMenu to false and items to [].
-- NEVER invent dishes that are not explicitly named in the text. Do not use general sushi knowledge to fill gaps.
-- When isRestaurantMenu is true: include sushi, sashimi, nigiri, rolls, and common sides (edamame, miso, etc.) useful for AYCE tracking.
+- isRestaurantMenu must be true ONLY if this is clearly a restaurant menu / dish listing. If it is an article, homepage, blog, wiki, marketing page, or anything else, set isRestaurantMenu to false and items to [].
+- NEVER invent dishes that are not explicitly named on the menu. Do not use general sushi knowledge to fill gaps.
+- When isRestaurantMenu is true: include sushi, sashimi, nigiri, rolls, common sides (edamame, miso, etc.), AND robata, yakitori, kushiyaki, skewers, and similar grilled/kitchen items useful for AYCE tracking.
 - Skip drinks, desserts, and non-food noise when possible.
-- name: short customer-facing item name, taken from the text.
-- pricePerPiece: U.S. USD value PER PIECE (not per whole roll).
+- name: short customer-facing item name, taken from the menu.
+- pricePerPiece: U.S. USD value PER PIECE (not per whole roll). For skewers, use the listed skewer price as pricePerPiece unless a piece count is shown.
   - If the name or description says 8 pcs / (8Pcs) / 8 pieces (or any count 2–24), DIVIDE the listed roll/plate price by that count. Example: Houston Roll (8Pcs) $15.99 → pricePerPiece 2.00.
   - Never treat an 8-piece roll's full price as a single-piece price.
-  - If no price is listed for an item that IS in the text, estimate a reasonable typical market à la carte per-piece price.
+  - If no price is listed for an item that IS on the menu, estimate a reasonable typical market à la carte per-piece (or per-skewer) price.
 - Cap at ${MAX_MENU_ITEMS} items. Prefer popular/common items if the menu is huge.
 - pricePerPiece must be a number >= 0 with at most 2 decimal places.
 
-Menu text:
-${menuText}`
+${sourceBlock}`
 }
 
 function extractJsonObject(raw) {
@@ -320,7 +380,16 @@ function normalizeItems(payload) {
   return cleaned
 }
 
-async function callGemini(menuText, sourceLabel) {
+function sanitizeUploadBase64(value) {
+  let data = String(value || '').trim()
+  const dataUrl = data.match(/^data:([^;]+);base64,(.+)$/i)
+  if (dataUrl) {
+    return { mimeFromDataUrl: normalizeMimeType(dataUrl[1]), base64: dataUrl[2].replace(/\s+/g, '') }
+  }
+  return { mimeFromDataUrl: '', base64: data.replace(/\s+/g, '') }
+}
+
+async function callGemini({ menuText = '', sourceLabel, media = null, skipGrounding = false }) {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) {
     throw new Error(
@@ -331,11 +400,21 @@ async function callGemini(menuText, sourceLabel) {
   const model = process.env.GEMINI_MODEL || 'gemini-3.6-flash'
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`
 
+  const parts = [{ text: buildPrompt(sourceLabel, { hasMedia: Boolean(media), menuText }) }]
+  if (media?.base64 && media?.mimeType) {
+    parts.push({
+      inline_data: {
+        mime_type: media.mimeType,
+        data: media.base64,
+      },
+    })
+  }
+
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: buildPrompt(sourceLabel, menuText) }] }],
+      contents: [{ parts }],
       generationConfig: {
         responseMimeType: 'application/json',
       },
@@ -363,17 +442,21 @@ async function callGemini(menuText, sourceLabel) {
 
   if (parsed?.isRestaurantMenu === false) {
     throw new Error(
-      'That page does not look like a restaurant menu. Paste the menu text instead.',
+      'That does not look like a restaurant menu. Try another photo/PDF, URL, or paste the menu text.',
     )
   }
 
   const cleaned = normalizeItems(parsed)
+  if (skipGrounding || media) {
+    return cleaned
+  }
+
   const grounded = groundItemsInSource(cleaned, menuText)
 
   // If most returned names were not in the source, the model invented a menu.
   if (cleaned.length > 0 && grounded.length < Math.max(1, Math.ceil(cleaned.length * 0.5))) {
     throw new Error(
-      'Could not match dishes to that page. Paste the menu text (dish names and prices) instead.',
+      'Could not match dishes to that page. Upload a photo/PDF or paste the menu text instead.',
     )
   }
 
@@ -415,34 +498,54 @@ export default async function handler(req, res) {
       const chunks = []
       for await (const chunk of req) chunks.push(chunk)
       const rawBody = Buffer.concat(chunks).toString('utf8')
-      if (rawBody.length > MAX_BODY_CHARS) {
-        sendJson(res, 413, { error: 'Request too large. Shorten the pasted menu text.' })
+      if (rawBody.length > MAX_UPLOAD_BODY_CHARS) {
+        sendJson(res, 413, { error: 'Request too large. Try a smaller photo or PDF.' })
         return
       }
       body = rawBody ? JSON.parse(rawBody) : {}
     } else if (typeof body === 'string') {
-      if (body.length > MAX_BODY_CHARS) {
-        sendJson(res, 413, { error: 'Request too large. Shorten the pasted menu text.' })
+      if (body.length > MAX_UPLOAD_BODY_CHARS) {
+        sendJson(res, 413, { error: 'Request too large. Try a smaller photo or PDF.' })
         return
       }
       body = body ? JSON.parse(body) : {}
     }
 
-    if (JSON.stringify(body).length > MAX_BODY_CHARS) {
-      sendJson(res, 413, { error: 'Request too large. Shorten the pasted menu text.' })
+    const serialized = JSON.stringify(body)
+    if (serialized.length > MAX_UPLOAD_BODY_CHARS) {
+      sendJson(res, 413, { error: 'Request too large. Try a smaller photo or PDF.' })
       return
     }
 
     const url = typeof body.url === 'string' ? body.url.trim() : ''
     const pasted = typeof body.text === 'string' ? body.text.trim() : ''
+    const upload = sanitizeUploadBase64(body.fileBase64)
+    let uploadMime = normalizeMimeType(body.mimeType || upload.mimeFromDataUrl)
 
-    if (!url && !pasted) {
-      sendJson(res, 400, { error: 'Provide a menu URL or pasted menu text.' })
+    if (!url && !pasted && !upload.base64) {
+      sendJson(res, 400, {
+        error: 'Provide a menu URL, photo/PDF upload, or pasted menu text.',
+      })
       return
     }
 
+    let media = null
+    if (upload.base64) {
+      if (upload.base64.length > MAX_FILE_BASE64_CHARS) {
+        sendJson(res, 413, { error: 'That file is too large. Try a smaller photo or PDF.' })
+        return
+      }
+      if (!ALLOWED_MEDIA_TYPES.has(uploadMime)) {
+        sendJson(res, 400, {
+          error: 'Upload a JPEG/PNG/WebP photo or a PDF menu.',
+        })
+        return
+      }
+      media = { mimeType: uploadMime === 'image/jpg' ? 'image/jpeg' : uploadMime, base64: upload.base64 }
+    }
+
     let menuText = ''
-    let sourceLabel = 'pasted menu text'
+    let sourceLabel = media ? 'uploaded menu file' : 'pasted menu text'
     let requirePrices = false
     let structuredItems = []
 
@@ -453,13 +556,18 @@ export default async function handler(req, res) {
       }
       sourceLabel = url
       const page = await fetchPage(url)
-      structuredItems = page.structured
-      menuText = page.text
-      requirePrices = !pasted && structuredItems.length < CHOWBUS_MIN_ITEMS
-      if (pasted) {
-        menuText = `${menuText}\n\nAdditional pasted text:\n${pasted}`.slice(0, MAX_PAGE_CHARS)
+      if (page.kind === 'pdf' && page.media) {
+        // Prefer URL PDF when present; uploaded file can still be included as extra context via pasted path only.
+        media = page.media
+      } else {
+        structuredItems = page.structured
+        menuText = page.text
+        requirePrices = !pasted && !media && structuredItems.length < CHOWBUS_MIN_ITEMS
+        if (pasted) {
+          menuText = `${menuText}\n\nAdditional pasted text:\n${pasted}`.slice(0, MAX_PAGE_CHARS)
+        }
       }
-    } else {
+    } else if (pasted) {
       menuText = pasted.slice(0, MAX_PAGE_CHARS)
     }
 
@@ -480,12 +588,19 @@ export default async function handler(req, res) {
       )
     }
 
-    assertUsableMenuSource(menuText, { requirePrices })
+    if (!media) {
+      assertUsableMenuSource(menuText, { requirePrices })
+    }
 
-    const items = await callGemini(menuText, sourceLabel)
+    const items = await callGemini({
+      menuText,
+      sourceLabel,
+      media,
+      skipGrounding: Boolean(media),
+    })
     if (!items.length) {
       sendJson(res, 422, {
-        error: 'No sushi-like items found. Try another page or paste the menu text.',
+        error: 'No menu items found. Try another page, photo/PDF, or paste the menu text.',
       })
       return
     }
@@ -499,9 +614,11 @@ export default async function handler(req, res) {
         ? 503
         : /Invalid JSON/i.test(message)
           ? 400
-          : /does not look like|Could not match dishes|No sushi-like/i.test(message)
-            ? 422
-            : 502
+          : /too large/i.test(message)
+            ? 413
+            : /does not look like|Could not match dishes|No menu items|No sushi-like/i.test(message)
+              ? 422
+              : 502
     sendJson(res, status, { error: message })
   }
 }

@@ -1,10 +1,12 @@
 /**
- * ImportMenuPanel — paste a restaurant menu URL (or menu text fallback),
- * review AI-estimated à la carte prices, then apply to the current meal.
+ * ImportMenuPanel — import from URL, paste text, or photo/PDF upload,
+ * review prices, then apply to the current meal.
  */
 
 import { useState } from 'react'
 import { importMenuFromSource } from '../utils/importMenuApi'
+
+const MAX_UPLOAD_BYTES = Math.floor(2.6 * 1024 * 1024)
 
 function draftFromItems(items) {
   return items.map((item, index) => ({
@@ -14,10 +16,24 @@ function draftFromItems(items) {
   }))
 }
 
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result || '')
+      const comma = result.indexOf(',')
+      resolve(comma >= 0 ? result.slice(comma + 1) : result)
+    }
+    reader.onerror = () => reject(new Error('Could not read that file. Try another photo or PDF.'))
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function ImportMenuPanel({ onReplaceMenu }) {
   const [url, setUrl] = useState('')
   const [text, setText] = useState('')
   const [showTextFallback, setShowTextFallback] = useState(false)
+  const [file, setFile] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [drafts, setDrafts] = useState(null)
@@ -27,16 +43,27 @@ export default function ImportMenuPanel({ onReplaceMenu }) {
     setError('')
     setLoading(true)
     try {
+      let fileBase64
+      let mimeType
+      if (file) {
+        if (file.size > MAX_UPLOAD_BYTES) {
+          throw new Error('That file is too large. Use a photo/PDF under about 2.5 MB.')
+        }
+        fileBase64 = await readFileAsBase64(file)
+        mimeType = file.type || 'application/octet-stream'
+      }
+
       const items = await importMenuFromSource({
         url: url.trim() || undefined,
         text: showTextFallback ? text : undefined,
+        fileBase64,
+        mimeType,
       })
       setDrafts(draftFromItems(items))
     } catch (err) {
       setDrafts(null)
       setError(err.message || 'Import failed.')
-      // If URL fetch often fails, nudge users toward paste fallback.
-      if (!showTextFallback) setShowTextFallback(true)
+      if (!showTextFallback && !file) setShowTextFallback(true)
     } finally {
       setLoading(false)
     }
@@ -80,6 +107,7 @@ export default function ImportMenuPanel({ onReplaceMenu }) {
     setError('')
     setUrl('')
     setText('')
+    setFile(null)
   }
 
   if (drafts) {
@@ -126,7 +154,7 @@ export default function ImportMenuPanel({ onReplaceMenu }) {
 
         {error && <p className="import-panel__error" role="alert">{error}</p>}
 
-        <div className="import-panel__actions">
+        <div className="import-panel__actions import-panel__actions--sticky">
           <button type="button" className="btn btn--ghost" onClick={handleCancelReview}>
             Cancel
           </button>
@@ -138,27 +166,47 @@ export default function ImportMenuPanel({ onReplaceMenu }) {
     )
   }
 
+  const canSubmit =
+    Boolean(url.trim()) ||
+    Boolean(file) ||
+    (showTextFallback && Boolean(text.trim()))
+
   return (
     <section className="import-panel" aria-labelledby="import-heading">
       <div className="section-head">
-        <h2 id="import-heading">Import from menu URL</h2>
+        <h2 id="import-heading">Import menu</h2>
         <p>
-          Paste a restaurant menu page link. We’ll pull item names and estimate typical à la carte
-          prices.
+          Paste a menu page or PDF link, upload a menu photo/PDF, or paste text. We’ll list items and
+          estimate typical à la carte prices.
         </p>
       </div>
 
       <form className="import-panel__form" onSubmit={handleImport}>
         <label className="import-panel__url">
-          <span>Menu website URL</span>
+          <span>Menu website or PDF URL</span>
           <input
             type="url"
             inputMode="url"
-            placeholder="https://example.com/menu"
+            placeholder="https://example.com/menu.pdf"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             disabled={loading}
           />
+        </label>
+
+        <label className="import-panel__file">
+          <span>Upload menu photo or PDF</span>
+          <input
+            type="file"
+            accept="image/*,application/pdf"
+            disabled={loading}
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+          />
+          <p className="import-panel__file-hint">
+            {file
+              ? `Selected: ${file.name}`
+              : 'Handy for paper menus or PDF downloads (about 2.5 MB max).'}
+          </p>
         </label>
 
         <button
@@ -184,11 +232,7 @@ export default function ImportMenuPanel({ onReplaceMenu }) {
 
         {error && <p className="import-panel__error" role="alert">{error}</p>}
 
-        <button
-          type="submit"
-          className="btn btn--secondary btn--block"
-          disabled={loading || (!url.trim() && !(showTextFallback && text.trim()))}
-        >
+        <button type="submit" className="btn btn--secondary btn--block" disabled={loading || !canSubmit}>
           {loading ? 'Importing…' : 'Import menu'}
         </button>
       </form>

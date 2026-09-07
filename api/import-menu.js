@@ -9,7 +9,7 @@
  * Required env (set in Vercel project settings — never commit the real key):
  *   GEMINI_API_KEY
  * Optional:
- *   GEMINI_MODEL  (default: gemini-2.5-flash)
+ *   GEMINI_MODEL  (default: gemini-3.6-flash)
  */
 
 const MAX_BODY_CHARS = 80_000
@@ -173,7 +173,7 @@ async function callGemini(menuText, sourceLabel) {
     )
   }
 
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+  const model = process.env.GEMINI_MODEL || 'gemini-3.6-flash'
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`
 
   const response = await fetch(endpoint, {
@@ -182,7 +182,6 @@ async function callGemini(menuText, sourceLabel) {
     body: JSON.stringify({
       contents: [{ parts: [{ text: buildPrompt(sourceLabel, menuText) }] }],
       generationConfig: {
-        temperature: 0.2,
         responseMimeType: 'application/json',
       },
     }),

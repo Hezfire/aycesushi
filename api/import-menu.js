@@ -210,7 +210,7 @@ function groceryEstimateFromName(name, description = '') {
   else if (/nigiri/.test(text)) perPiece = 1.25
   else if (/dragon|rainbow|tempura|spider|volcano|crunchy|special roll|caterpillar/.test(text))
     perPiece = 1.0
-  else if (/california|cucumber|avocado roll|tuna roll|salmon roll|spicy tuna|spicy salmon|philadelphia|maki|\broll\b/.test(text))
+  else if (/california|cucumber roll|avocado roll|tuna roll|salmon roll|spicy tuna|spicy salmon|philadelphia|maki|\broll\b/.test(text))
     perPiece = 0.65
   else if (/yakitori|skewer|kushi|robata|kushiyaki/.test(text)) perPiece = 1.5
   else if (/edamame/.test(text)) perPiece = 2.5

@@ -435,6 +435,65 @@ function sanitizeUploadBase64(value) {
   return { mimeFromDataUrl: '', base64: data.replace(/\s+/g, '') }
 }
 
+function extractDishNamesFromText(text) {
+  const chunks = String(text || '').split(/\n|\r|;|\u2022/)
+  const items = []
+  const seen = new Set()
+
+  for (let line of chunks) {
+    let cleaned = line
+      .replace(/\$\s*\d+(?:\.\d{1,2})?/g, ' ')
+      .replace(/\b\d+\.\d{2}\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    cleaned = cleaned.replace(/^\d+[\).:\-]\s*/, '').replace(/\s*[-–—]\s*$/, '').trim()
+    if (cleaned.length < 3 || cleaned.length > 70) continue
+    if (!/[a-zA-Z]{3,}/.test(cleaned)) continue
+    if (
+      /^(menu|category|appetizers?|rolls?|nigiri|sashimi|drinks?|beverages?|lunch|dinner|specials?|sides?)\s*$/i.test(
+        cleaned,
+      )
+    ) {
+      continue
+    }
+
+    const key = cleaned.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    items.push({ name: cleaned })
+    if (items.length >= MAX_MENU_ITEMS) break
+  }
+
+  return items
+}
+
+function isAiQuotaError(err) {
+  return /quota|used up|high demand|rate limit|Too many|429/i.test(String(err?.message || err || ''))
+}
+
+async function callGeminiWithGroceryFallback({ menuText = '', sourceLabel, media = null, skipGrounding = false }) {
+  try {
+    return await callGemini({ menuText, sourceLabel, media, skipGrounding })
+  } catch (err) {
+    if (!isAiQuotaError(err) && !/AI menu extraction failed|unexpected format/i.test(String(err?.message || ''))) {
+      throw err
+    }
+
+    // PDF/photo needs the model — fall back only when we have readable text/names.
+    const names = extractDishNamesFromText(menuText)
+    if (names.length >= 3) {
+      return applyGroceryFallbackPrices(names)
+    }
+
+    if (isAiQuotaError(err)) {
+      throw new Error(
+        'The free AI quota is temporarily used up. Paste the menu as text (dish names), use a Chowbus link if you have one, or try again later. Counters still work with the default menu.',
+      )
+    }
+    throw err
+  }
+}
+
 async function callGemini({ menuText = '', sourceLabel, media = null, skipGrounding = false }) {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) {

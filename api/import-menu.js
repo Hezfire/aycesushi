@@ -3,8 +3,9 @@
  *
  * Flow:
  * 1) Fetch page HTML (URL) or use pasted text
- * 2) Ask Gemini (free tier) to extract items + typical à la carte $/piece estimates
- * 3) Return cleaned JSON to the browser
+ * 2) If Chowbus-style JSON is embedded, extract name + price directly (divide by pcs)
+ * 3) Otherwise ask Gemini to extract items + typical à la carte $/piece estimates
+ * 4) Return cleaned JSON to the browser
  *
  * Required env (set in Vercel project settings — never commit the real key):
  *   GEMINI_API_KEY
@@ -14,6 +15,8 @@
 
 const MAX_BODY_CHARS = 80_000
 const MAX_PAGE_CHARS = 40_000
+const MAX_MENU_ITEMS = 80
+const CHOWBUS_MIN_ITEMS = 8
 const FETCH_TIMEOUT_MS = 12_000
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX = 8
@@ -67,7 +70,102 @@ function htmlToPlainText(html) {
     .trim()
 }
 
-async function fetchPageText(url) {
+/**
+ * Piece count from labels like "(8Pcs)", "8 pcs", "8 pieces".
+ * Default 1 when no count is stated (sides, bowls, single nigiri prices).
+ */
+function piecesFromLabel(name, description = '') {
+  const text = `${name || ''} ${description || ''}`
+  const patterns = [/\((\d+)\s*pcs?\.?\)/i, /\b(\d+)\s*pcs?\b/i, /\b(\d+)\s*pieces?\b/i]
+  for (const re of patterns) {
+    const match = text.match(re)
+    if (!match) continue
+    const n = Number(match[1])
+    if (Number.isFinite(n) && n >= 2 && n <= 24) return n
+  }
+  return 1
+}
+
+function toPricePerPiece(listPrice, name, description = '') {
+  const price = Number(listPrice)
+  if (!Number.isFinite(price) || price < 0) return 0
+  const pieces = piecesFromLabel(name, description)
+  return Math.round((price / pieces) * 100) / 100
+}
+
+function decodeHtmlEntities(value) {
+  return String(value || '')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/\\u0026/gi, '&')
+    .trim()
+}
+
+/**
+ * Chowbus / similar POS pages embed dishes in Next.js flight scripts as
+ * heavily escaped JSON, e.g. \\\"name\\\":\\\"edamame\\\", \\\"menu_price\\\":\\\"4.99\\\".
+ * Plain-text stripping removes those scripts, so we parse the raw HTML.
+ */
+function normalizeEmbeddedJson(html) {
+  let s = String(html || '')
+  for (let i = 0; i < 4; i++) {
+    if (/"menu_price"\s*:/.test(s)) break
+    s = s.replace(/\\"/g, '"').replace(/\\u0026/gi, '&')
+  }
+  return s
+}
+
+function extractChowbusMenuItems(html) {
+  const raw = normalizeEmbeddedJson(html)
+  const found = []
+  const seen = new Set()
+
+  function consider(nameRaw, priceRaw, descriptionRaw = '') {
+    const name = decodeHtmlEntities(nameRaw).replace(/\s+/g, ' ')
+    if (!name || name.length > 80) return
+    const key = name.toLowerCase()
+    if (seen.has(key)) return
+    const listPrice = Number(priceRaw)
+    if (!Number.isFinite(listPrice) || listPrice <= 0) return
+    if (/^(cart|subtotal|total|tax|tip|delivery|service fee)\b/i.test(name)) return
+    seen.add(key)
+    const description = decodeHtmlEntities(descriptionRaw)
+    found.push({
+      name,
+      listPrice,
+      description,
+      pricePerPiece: toPricePerPiece(listPrice, name, description),
+    })
+  }
+
+  // Real dishes include kitchen_name; category rows do not (avoids pairing
+  // category titles with the next item's menu_price).
+  const itemRe =
+    /"name"\s*:\s*"([^"]{1,120})"\s*,\s*"foreign_name"\s*:\s*"([^"]*)"\s*,\s*"kitchen_name"\s*:\s*"([^"]*)"[\s\S]{0,400}?"menu_price"\s*:\s*"([0-9]+(?:\.[0-9]+)?)"(?:[\s\S]{0,400}?"description"\s*:\s*"([^"]*)")?/g
+  let match
+  while ((match = itemRe.exec(raw))) {
+    consider(match[1], match[4], match[5] || '')
+  }
+
+  return found
+}
+
+function formatStructuredMenuText(items) {
+  return items
+    .map((item) => {
+      const pcs = piecesFromLabel(item.name, item.description)
+      const pcsNote = pcs > 1 ? ` (${pcs} pcs)` : ''
+      return `${item.name}${pcsNote} $${Number(item.listPrice).toFixed(2)}${
+        item.description ? ` — ${item.description}` : ''
+      }`
+    })
+    .join('\n')
+}
+
+async function fetchPage(url) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
   try {
@@ -90,14 +188,15 @@ async function fetchPageText(url) {
     ) {
       throw new Error('That URL does not look like a menu web page.')
     }
-    const raw = await response.text()
-    const text = htmlToPlainText(raw).slice(0, MAX_PAGE_CHARS)
-    if (text.length < 40) {
+    const html = await response.text()
+    const structured = extractChowbusMenuItems(html)
+    const text = htmlToPlainText(html).slice(0, MAX_PAGE_CHARS)
+    if (structured.length < CHOWBUS_MIN_ITEMS && text.length < 40) {
       throw new Error(
         'The page had almost no readable text (often a JavaScript-only menu). Paste the menu text instead.',
       )
     }
-    return text
+    return { html, text, structured }
   } catch (err) {
     if (err.name === 'AbortError') {
       throw new Error('Timed out loading that website. Try again or paste menu text.')
@@ -175,10 +274,11 @@ Rules:
 - When isRestaurantMenu is true: include sushi, sashimi, nigiri, rolls, and common sides (edamame, miso, etc.) useful for AYCE tracking.
 - Skip drinks, desserts, and non-food noise when possible.
 - name: short customer-facing item name, taken from the text.
-- pricePerPiece: estimated typical U.S. à la carte USD value PER PIECE (not per roll platter).
-  - If the menu shows a whole-roll price (e.g. $12 for 8 pieces), divide to get per-piece.
+- pricePerPiece: U.S. USD value PER PIECE (not per whole roll).
+  - If the name or description says 8 pcs / (8Pcs) / 8 pieces (or any count 2–24), DIVIDE the listed roll/plate price by that count. Example: Houston Roll (8Pcs) $15.99 → pricePerPiece 2.00.
+  - Never treat an 8-piece roll's full price as a single-piece price.
   - If no price is listed for an item that IS in the text, estimate a reasonable typical market à la carte per-piece price.
-- Cap at 40 items. Prefer popular/common items if the menu is huge.
+- Cap at ${MAX_MENU_ITEMS} items. Prefer popular/common items if the menu is huge.
 - pricePerPiece must be a number >= 0 with at most 2 decimal places.
 
 Menu text:
@@ -214,7 +314,7 @@ function normalizeItems(payload) {
     price = Math.round(price * 100) / 100
 
     cleaned.push({ name, pricePerPiece: price })
-    if (cleaned.length >= 40) break
+    if (cleaned.length >= MAX_MENU_ITEMS) break
   }
 
   return cleaned
@@ -344,6 +444,7 @@ export default async function handler(req, res) {
     let menuText = ''
     let sourceLabel = 'pasted menu text'
     let requirePrices = false
+    let structuredItems = []
 
     if (url) {
       if (!isValidHttpUrl(url)) {
@@ -351,13 +452,32 @@ export default async function handler(req, res) {
         return
       }
       sourceLabel = url
-      menuText = await fetchPageText(url)
-      requirePrices = !pasted
+      const page = await fetchPage(url)
+      structuredItems = page.structured
+      menuText = page.text
+      requirePrices = !pasted && structuredItems.length < CHOWBUS_MIN_ITEMS
       if (pasted) {
         menuText = `${menuText}\n\nAdditional pasted text:\n${pasted}`.slice(0, MAX_PAGE_CHARS)
       }
     } else {
       menuText = pasted.slice(0, MAX_PAGE_CHARS)
+    }
+
+    // Chowbus (and similar) menus: use structured prices directly — skip Gemini.
+    if (structuredItems.length >= CHOWBUS_MIN_ITEMS) {
+      const items = structuredItems.slice(0, Math.max(MAX_MENU_ITEMS, 120)).map((item) => ({
+        name: item.name,
+        pricePerPiece: item.pricePerPiece,
+      }))
+      sendJson(res, 200, { items })
+      return
+    }
+
+    if (structuredItems.length > 0) {
+      menuText = `${formatStructuredMenuText(structuredItems)}\n\n${menuText}`.slice(
+        0,
+        MAX_PAGE_CHARS,
+      )
     }
 
     assertUsableMenuSource(menuText, { requirePrices })

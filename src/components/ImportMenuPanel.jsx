@@ -116,8 +116,8 @@ export default function ImportMenuPanel({ onReplaceMenu }) {
         <div className="section-head">
           <h2 id="import-review-heading">Review imported menu</h2>
           <p>
-            Prices are AI estimates of typical à la carte value — not the restaurant’s official
-            prices. Edit before applying.
+            Prices are AI estimates of grocery/store-bought value (HEB/Kroger-style)—not the
+            restaurant’s menu prices. Edit before applying.
           </p>
         </div>
 
@@ -133,7 +133,7 @@ export default function ImportMenuPanel({ onReplaceMenu }) {
                 />
               </label>
               <label className="import-review-row__price">
-                <span>$ / piece</span>
+                <span>Est. grocery $ / piece</span>
                 <input
                   type="text"
                   inputMode="decimal"
@@ -176,8 +176,8 @@ export default function ImportMenuPanel({ onReplaceMenu }) {
       <div className="section-head">
         <h2 id="import-heading">Import menu</h2>
         <p>
-          Paste a menu page or PDF link, upload a menu photo/PDF, or paste text. We’ll list items and
-          estimate typical à la carte prices.
+          Paste a menu page or PDF link, upload a menu photo/PDF, or paste text. We’ll list dishes
+          and estimate grocery/store-bought prices per piece.
         </p>
       </div>
 

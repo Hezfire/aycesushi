@@ -9,7 +9,7 @@ export default function PriceInput({ value, onChange }) {
     <section className="price-input" aria-labelledby="price-heading">
       <div className="price-input__copy">
         <h2 id="price-heading">What you paid</h2>
-        <p>Per person. Add drink or service fees if you want them counted.</p>
+        <p>Per person. Worth-it math uses grocery sushi value, not restaurant à la carte.</p>
       </div>
       <label className="price-input__field">
         <span className="price-input__prefix">$</span>

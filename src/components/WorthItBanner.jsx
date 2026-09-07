@@ -18,7 +18,7 @@ export default function WorthItBanner({ eatenValue, pricePaid, worthIt, totalPie
     <section className={`worth-banner worth-banner--${status}`} aria-live="polite">
       <div className="worth-banner__main">
         <div className="worth-banner__stat">
-          <span className="worth-banner__label">Value eaten</span>
+          <span className="worth-banner__label">Grocery value</span>
           <strong className="worth-banner__value">{formatMoney(eatenValue)}</strong>
         </div>
         <div className="worth-banner__divider" aria-hidden="true" />

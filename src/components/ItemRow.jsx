@@ -81,7 +81,7 @@ export default function ItemRow({ item, onIncrement, onDecrement, onUpdate, onRe
               </button>
             </div>
             <p className="item-row__meta">
-              {formatMoney(item.pricePerPiece)} / piece
+              {formatMoney(item.pricePerPiece)} grocery / piece
               {item.count > 0 && (
                 <span className="item-row__line"> · {formatMoney(lineTotal)}</span>
               )}

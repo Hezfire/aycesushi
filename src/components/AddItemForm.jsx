@@ -47,7 +47,7 @@ export default function AddItemForm({ onAdd }) {
         />
       </label>
       <label>
-        <span>Est. $ per piece</span>
+        <span>Est. grocery $ per piece</span>
         <input
           type="text"
           inputMode="decimal"

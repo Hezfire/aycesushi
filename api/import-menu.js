@@ -4,8 +4,8 @@
  *
  * Flow:
  * 1) Fetch page HTML / PDF (URL), use pasted text, or accept uploaded media
- * 2) If Chowbus-style JSON is embedded, extract name + price directly (divide by pcs)
- * 3) Otherwise ask Gemini (text or multimodal) to extract items + $/piece estimates
+ * 2) If Chowbus-style JSON is embedded, extract dish names then grocery-price them
+ * 3) Otherwise ask Gemini (text or multimodal) for names + grocery $/piece estimates
  * 4) Return cleaned JSON to the browser
  *
  * Required env (set in Vercel project settings — never commit the real key):
@@ -187,15 +187,60 @@ function extractChowbusMenuItems(html) {
 }
 
 function formatStructuredMenuText(items) {
+  // Names (+ piece counts) only — never pass restaurant menu prices into Gemini.
   return items
     .map((item) => {
       const pcs = piecesFromLabel(item.name, item.description)
-      const pcsNote = pcs > 1 ? ` (${pcs} pcs)` : ''
-      return `${item.name}${pcsNote} $${Number(item.listPrice).toFixed(2)}${
-        item.description ? ` — ${item.description}` : ''
-      }`
+      return pcs > 1
+        ? `${item.name} (${pcs} pieces per order at the restaurant)`
+        : item.name
     })
     .join('\n')
+}
+
+/**
+ * Offline grocery / supermarket per-piece estimates when Gemini is unavailable.
+ * Tuned to HEB / Kroger / Costco-pack style prepared sushi, not restaurant à la carte.
+ */
+function groceryEstimateFromName(name, description = '') {
+  const text = `${name || ''} ${description || ''}`.toLowerCase()
+
+  let perPiece = 1.2
+  if (/sashimi/.test(text)) perPiece = 1.55
+  else if (/nigiri/.test(text)) perPiece = 1.25
+  else if (/dragon|rainbow|tempura|spider|volcano|crunchy|special roll|caterpillar/.test(text))
+    perPiece = 1.0
+  else if (/california|cucumber|avocado roll|tuna roll|salmon roll|spicy tuna|spicy salmon|philadelphia|maki|\broll\b/.test(text))
+    perPiece = 0.65
+  else if (/yakitori|skewer|kushi|robata|kushiyaki/.test(text)) perPiece = 1.5
+  else if (/edamame/.test(text)) perPiece = 2.5
+  else if (/miso/.test(text)) perPiece = 1.5
+  else if (/salad|soup/.test(text)) perPiece = 2.0
+  else if (/sushi/.test(text)) perPiece = 1.15
+
+  return Math.round(perPiece * 100) / 100
+}
+
+function applyGroceryFallbackPrices(items) {
+  return items.map((item) => ({
+    name: item.name,
+    pricePerPiece: groceryEstimateFromName(item.name, item.description),
+  }))
+}
+
+function mergeGroceryPrices(namedItems, pricedItems) {
+  const byName = new Map(
+    (pricedItems || []).map((item) => [String(item.name || '').toLowerCase(), item.pricePerPiece]),
+  )
+  return namedItems.map((item) => {
+    const key = String(item.name || '').toLowerCase()
+    const fromModel = byName.get(key)
+    const price =
+      Number.isFinite(fromModel) && fromModel > 0
+        ? Math.round(Number(fromModel) * 100) / 100
+        : groceryEstimateFromName(item.name, item.description)
+    return { name: item.name, pricePerPiece: price }
+  })
 }
 
 function bufferToBase64(buffer) {
@@ -320,25 +365,26 @@ function groundItemsInSource(items, menuText) {
 function buildPrompt(sourceLabel, { hasMedia = false, menuText = '' } = {}) {
   const sourceBlock = hasMedia
     ? `The restaurant menu is attached as an image or PDF. Extract dishes that are clearly listed there.`
-    : `Menu text:\n${menuText}`
+    : `Menu / dish list:\n${menuText}`
 
-  return `You extract Japanese restaurant / AYCE menu items for a worth-it calculator.
+  return `You help an AYCE worth-it calculator. Extract dish names from a restaurant menu, then price each dish at GROCERY / SUPERMARKET prepared-sushi value (HEB, Kroger, Costco pack style)—NOT the restaurant’s à la carte price.
 
 Source: ${sourceLabel}
 
-From the menu, return ONLY valid JSON (no markdown) with this shape:
-{"isRestaurantMenu":true,"items":[{"name":"Salmon Nigiri","pricePerPiece":3.5}]}
+Return ONLY valid JSON (no markdown) with this shape:
+{"isRestaurantMenu":true,"items":[{"name":"Salmon Nigiri","pricePerPiece":1.25}]}
 
 Rules:
-- isRestaurantMenu must be true ONLY if this is clearly a restaurant menu / dish listing. If it is an article, homepage, blog, wiki, marketing page, or anything else, set isRestaurantMenu to false and items to [].
-- NEVER invent dishes that are not explicitly named on the menu. Do not use general sushi knowledge to fill gaps.
+- isRestaurantMenu must be true ONLY if this is clearly a restaurant menu / dish listing (or a list of dish names to price). If it is an article, homepage, blog, wiki, marketing page, or anything else, set isRestaurantMenu to false and items to [].
+- NEVER invent dishes that are not explicitly named. Do not invent a full sushi menu from general knowledge.
 - When isRestaurantMenu is true: include sushi, sashimi, nigiri, rolls, common sides (edamame, miso, etc.), AND robata, yakitori, kushiyaki, skewers, and similar grilled/kitchen items useful for AYCE tracking.
 - Skip drinks, desserts, and non-food noise when possible.
-- name: short customer-facing item name, taken from the menu.
-- pricePerPiece: U.S. USD value PER PIECE (not per whole roll). For skewers, use the listed skewer price as pricePerPiece unless a piece count is shown.
-  - If the name or description says 8 pcs / (8Pcs) / 8 pieces (or any count 2–24), DIVIDE the listed roll/plate price by that count. Example: Houston Roll (8Pcs) $15.99 → pricePerPiece 2.00.
-  - Never treat an 8-piece roll's full price as a single-piece price.
-  - If no price is listed for an item that IS on the menu, estimate a reasonable typical market à la carte per-piece (or per-skewer) price.
+- name: short customer-facing item name from the menu.
+- pricePerPiece: typical U.S. GROCERY-STORE prepared sushi USD value PER PIECE (what you’d pay at HEB/Kroger-style sushi, not a sit-down restaurant).
+  - Ignore restaurant dollar amounts printed on the menu when setting pricePerPiece.
+  - Ballpark guides: nigiri/sashimi ~$1.00–$1.75/pc; common rolls ~$0.50–$0.90/pc; fancy rolls ~$0.80–$1.25/pc; sides lower grocery analogs.
+  - If the name says 8 pcs / (8Pcs) / 8 pieces, pricePerPiece is still the grocery value of ONE piece (not the whole roll).
+  - For skewers, use a grocery meat-skewer analog per skewer.
 - Cap at ${MAX_MENU_ITEMS} items. Prefer popular/common items if the menu is huge.
 - pricePerPiece must be a number >= 0 with at most 2 decimal places.
 
@@ -571,12 +617,27 @@ export default async function handler(req, res) {
       menuText = pasted.slice(0, MAX_PAGE_CHARS)
     }
 
-    // Chowbus (and similar) menus: use structured prices directly — skip Gemini.
+    // Chowbus: keep dish names from the restaurant JSON, but price at grocery baseline.
     if (structuredItems.length >= CHOWBUS_MIN_ITEMS) {
-      const items = structuredItems.slice(0, Math.max(MAX_MENU_ITEMS, 120)).map((item) => ({
-        name: item.name,
-        pricePerPiece: item.pricePerPiece,
-      }))
+      const named = structuredItems.slice(0, Math.max(MAX_MENU_ITEMS, 120))
+      const nameListText = formatStructuredMenuText(named)
+      let items
+      try {
+        const priced = await callGemini({
+          menuText: nameListText,
+          sourceLabel: `${sourceLabel} (grocery reprice)`,
+          skipGrounding: true,
+        })
+        items = mergeGroceryPrices(named, priced)
+      } catch {
+        items = applyGroceryFallbackPrices(named)
+      }
+      if (!items.length) {
+        sendJson(res, 422, {
+          error: 'No menu items found. Try another page, photo/PDF, or paste the menu text.',
+        })
+        return
+      }
       sendJson(res, 200, { items })
       return
     }

@@ -37,7 +37,7 @@ export default function App() {
         <p className="app-header__brand">WorthBite</p>
         <h1>AYCE Sushi Worth-It</h1>
         <p className="app-header__tagline">
-          Log pieces as you eat. See when the buffet pays for itself.
+          Log pieces as you eat. Compare AYCE to grocery sushi value.
         </p>
       </header>
 
@@ -69,9 +69,10 @@ export default function App() {
 
       <footer className="app-footer">
         <p>
-          WorthBite compares estimated à la carte value to what you paid for AYCE. Imported prices
-          are AI estimates for fun table math—not official restaurant prices. Progress stays on this
-          phone until you reset.
+          WorthBite compares grocery/store-bought sushi value (HEB/Kroger-style) to what you paid
+          for AYCE. Imported dish names come from the restaurant menu; dollar amounts are grocery
+          estimates for table math—not official store or restaurant prices. Progress stays on this
+          phone until you reset. Tap New meal if prices still look like an older session.
         </p>
       </footer>
     </div>

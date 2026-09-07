@@ -9,7 +9,7 @@ export default function ItemList({ items, onAdjustCount, onUpdateItem, onRemoveI
     <section className="item-list" aria-labelledby="menu-heading">
       <div className="section-head">
         <h2 id="menu-heading">Log what you eat</h2>
-        <p>Tap + as you finish pieces. Tap Edit to change a price or remove an item.</p>
+        <p>Tap + as you finish pieces. Prices are est. grocery value per piece. Tap Edit to change.</p>
       </div>
       <div className="item-list__rows">
         {items.map((item) => (

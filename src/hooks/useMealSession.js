@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DEFAULT_MENU_ITEMS } from '../data/defaultMenu'
 import { calcEatenValue, calcWorthIt } from '../utils/worthIt'
 
-const STORAGE_KEY = 'ayce-sushi-worth-it-v1'
+const STORAGE_KEY = 'ayce-sushi-worth-it-v2'
 
 function createItemFromMenu(menuItem) {
   return {

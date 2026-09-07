@@ -1,5 +1,5 @@
 /**
- * Worth-it math: compare estimated à la carte value eaten vs AYCE price paid.
+ * Worth-it math: compare grocery/store-bought sushi value eaten vs AYCE price paid.
  * Tweak thresholds here if you want different status messages.
  */
 

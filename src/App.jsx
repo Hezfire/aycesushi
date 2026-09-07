@@ -9,6 +9,7 @@ import WorthItBanner from './components/WorthItBanner'
 import ImportMenuPanel from './components/ImportMenuPanel'
 import ItemList from './components/ItemList'
 import AddItemForm from './components/AddItemForm'
+import ShareSummary from './components/ShareSummary'
 import ResetButton from './components/ResetButton'
 import { useMealSession } from './hooks/useMealSession'
 
@@ -57,13 +58,20 @@ export default function App() {
           onRemoveItem={removeItem}
         />
         <AddItemForm onAdd={addCustomItem} />
+        <ShareSummary
+          totalPieces={totalPieces}
+          eatenValue={eatenValue}
+          pricePaid={pricePaidNumber}
+          worthIt={worthIt}
+        />
         <ResetButton onClearCounts={clearCounts} onReset={resetSession} />
       </main>
 
       <footer className="app-footer">
         <p>
-          Default prices live in <code>src/data/defaultMenu.js</code>. Or import from a restaurant
-          menu URL above. AI prices are typical-value estimates for worth-it math.
+          WorthBite compares estimated à la carte value to what you paid for AYCE. Imported prices
+          are AI estimates for fun table math—not official restaurant prices. Progress stays on this
+          phone until you reset.
         </p>
       </footer>
     </div>

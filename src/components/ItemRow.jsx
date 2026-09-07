@@ -72,9 +72,14 @@ export default function ItemRow({ item, onIncrement, onDecrement, onUpdate, onRe
       ) : (
         <>
           <div className="item-row__info">
-            <button type="button" className="item-row__name" onClick={startEdit}>
-              {item.name}
-            </button>
+            <div className="item-row__title">
+              <button type="button" className="item-row__name" onClick={startEdit}>
+                {item.name}
+              </button>
+              <button type="button" className="item-row__edit-btn" onClick={startEdit}>
+                Edit
+              </button>
+            </div>
             <p className="item-row__meta">
               {formatMoney(item.pricePerPiece)} / piece
               {item.count > 0 && (

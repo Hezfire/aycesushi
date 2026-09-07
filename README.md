@@ -170,3 +170,4 @@ Open `src/data/defaultMenu.js`, edit names and `pricePerPiece` values, save, ref
 | `vercel.json` | Vercel hosting config |
 | `.env.example` | Template for `GEMINI_API_KEY` |
 | `src/App.jsx` | Main page layout |
+# aycesushi

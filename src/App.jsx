@@ -21,6 +21,7 @@ export default function App() {
     updateItem,
     removeItem,
     addCustomItem,
+    clearCounts,
     resetSession,
     replaceMenu,
     eatenValue,
@@ -56,7 +57,7 @@ export default function App() {
           onRemoveItem={removeItem}
         />
         <AddItemForm onAdd={addCustomItem} />
-        <ResetButton onReset={resetSession} />
+        <ResetButton onClearCounts={clearCounts} onReset={resetSession} />
       </main>
 
       <footer className="app-footer">

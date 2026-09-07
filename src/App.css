@@ -564,6 +564,12 @@
   padding: 0.25rem 0 0;
 }
 
+.reset-wrap__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+
 .reset-wrap .btn {
   color: #d7ebe6;
   border-color: rgba(215, 235, 230, 0.28);

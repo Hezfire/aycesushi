@@ -108,21 +108,76 @@ async function fetchPageText(url) {
   }
 }
 
+function countPriceSignals(text) {
+  const dollar = (String(text).match(/\$\s*\d/g) || []).length
+  const decimals = (String(text).match(/\b\d+\.\d{2}\b/g) || []).length
+  return dollar + decimals
+}
+
+/**
+ * URL pages without price-like text are usually marketing/wiki/SPA shells.
+ * Pasted text can be dish names only, so prices are not required there.
+ */
+function assertUsableMenuSource(text, { requirePrices }) {
+  if (requirePrices && countPriceSignals(text) < 2) {
+    throw new Error(
+      'That page does not look like a priced restaurant menu. Paste the menu text (dish names and prices) instead.',
+    )
+  }
+}
+
+const NAME_STOP_WORDS = new Set([
+  'the',
+  'and',
+  'with',
+  'from',
+  'roll',
+  'rolls',
+  'piece',
+  'pieces',
+  'special',
+  'sushi',
+])
+
+function itemGroundedInSource(name, sourceLower) {
+  const n = String(name || '')
+    .toLowerCase()
+    .trim()
+  if (!n) return false
+  if (sourceLower.includes(n)) return true
+
+  const words = n
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 2 && !NAME_STOP_WORDS.has(w))
+  if (words.length === 0) {
+    return sourceLower.includes(n.slice(0, Math.min(10, n.length)))
+  }
+  const hits = words.filter((w) => sourceLower.includes(w)).length
+  return hits >= Math.ceil(words.length * 0.7)
+}
+
+function groundItemsInSource(items, menuText) {
+  const sourceLower = String(menuText || '').toLowerCase()
+  return items.filter((item) => itemGroundedInSource(item.name, sourceLower))
+}
+
 function buildPrompt(sourceLabel, menuText) {
   return `You extract sushi / Japanese restaurant menu items for an all-you-can-eat worth-it calculator.
 
 Source: ${sourceLabel}
 
-From the menu text below, return ONLY valid JSON (no markdown) with this shape:
-{"items":[{"name":"Salmon Nigiri","pricePerPiece":3.5}]}
+From the text below, return ONLY valid JSON (no markdown) with this shape:
+{"isRestaurantMenu":true,"items":[{"name":"Salmon Nigiri","pricePerPiece":3.5}]}
 
 Rules:
-- Include sushi, sashimi, nigiri, rolls, and common sides (edamame, miso, etc.) useful for AYCE tracking.
+- isRestaurantMenu must be true ONLY if the text is clearly a restaurant menu / dish listing (item names people order). If it is an article, homepage, blog, wiki, marketing page, or anything else, set isRestaurantMenu to false and items to [].
+- NEVER invent dishes that are not explicitly named in the text. Do not use general sushi knowledge to fill gaps.
+- When isRestaurantMenu is true: include sushi, sashimi, nigiri, rolls, and common sides (edamame, miso, etc.) useful for AYCE tracking.
 - Skip drinks, desserts, and non-food noise when possible.
-- name: short customer-facing item name.
+- name: short customer-facing item name, taken from the text.
 - pricePerPiece: estimated typical U.S. à la carte USD value PER PIECE (not per roll platter).
   - If the menu shows a whole-roll price (e.g. $12 for 8 pieces), divide to get per-piece.
-  - If no price is listed, estimate a reasonable typical market à la carte per-piece price.
+  - If no price is listed for an item that IS in the text, estimate a reasonable typical market à la carte per-piece price.
 - Cap at 40 items. Prefer popular/common items if the menu is huge.
 - pricePerPiece must be a number >= 0 with at most 2 decimal places.
 
@@ -205,7 +260,24 @@ async function callGemini(menuText, sourceLabel) {
   const text =
     data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') || ''
   const parsed = extractJsonObject(text)
-  return normalizeItems(parsed)
+
+  if (parsed?.isRestaurantMenu === false) {
+    throw new Error(
+      'That page does not look like a restaurant menu. Paste the menu text instead.',
+    )
+  }
+
+  const cleaned = normalizeItems(parsed)
+  const grounded = groundItemsInSource(cleaned, menuText)
+
+  // If most returned names were not in the source, the model invented a menu.
+  if (cleaned.length > 0 && grounded.length < Math.max(1, Math.ceil(cleaned.length * 0.5))) {
+    throw new Error(
+      'Could not match dishes to that page. Paste the menu text (dish names and prices) instead.',
+    )
+  }
+
+  return grounded
 }
 
 function sendJson(res, status, body) {
@@ -271,6 +343,7 @@ export default async function handler(req, res) {
 
     let menuText = ''
     let sourceLabel = 'pasted menu text'
+    let requirePrices = false
 
     if (url) {
       if (!isValidHttpUrl(url)) {
@@ -279,12 +352,15 @@ export default async function handler(req, res) {
       }
       sourceLabel = url
       menuText = await fetchPageText(url)
+      requirePrices = !pasted
       if (pasted) {
         menuText = `${menuText}\n\nAdditional pasted text:\n${pasted}`.slice(0, MAX_PAGE_CHARS)
       }
     } else {
       menuText = pasted.slice(0, MAX_PAGE_CHARS)
     }
+
+    assertUsableMenuSource(menuText, { requirePrices })
 
     const items = await callGemini(menuText, sourceLabel)
     if (!items.length) {
@@ -303,7 +379,9 @@ export default async function handler(req, res) {
         ? 503
         : /Invalid JSON/i.test(message)
           ? 400
-          : 502
+          : /does not look like|Could not match dishes|No sushi-like/i.test(message)
+            ? 422
+            : 502
     sendJson(res, status, { error: message })
   }
 }

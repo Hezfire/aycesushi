@@ -122,6 +122,14 @@ export function useMealSession() {
     setSession(createFreshSession())
   }, [])
 
+  /** Zero piece counts only — keep current menu and price paid. */
+  const clearCounts = useCallback(() => {
+    setSession((prev) => ({
+      ...prev,
+      items: prev.items.map((item) => ({ ...item, count: 0 })),
+    }))
+  }, [])
+
   /** Replace the whole menu (e.g. after URL import). Counts reset to 0; price paid is kept. */
   const replaceMenu = useCallback((menuItems) => {
     if (!Array.isArray(menuItems) || menuItems.length === 0) return false
@@ -161,6 +169,7 @@ export function useMealSession() {
     updateItem,
     removeItem,
     addCustomItem,
+    clearCounts,
     resetSession,
     replaceMenu,
     eatenValue,

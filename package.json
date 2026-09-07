@@ -1,0 +1,22 @@
+{
+  "name": "ayce-sushi-calculator",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Track sushi eaten at AYCE and see if you're getting your money's worth.",
+  "scripts": {
+    "dev": "vite",
+    "dev:full": "npx vercel dev",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vercel": "^39.4.2",
+    "vite": "^5.4.11"
+  }
+}

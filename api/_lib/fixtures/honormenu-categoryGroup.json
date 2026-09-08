@@ -1,0 +1,280 @@
+{
+  "returnCode": 0,
+  "list": [
+    {
+      "CategoryGroupID": 426656,
+      "ClientID": 5,
+      "L1": "Menu (Online)",
+      "L2": "Menu (Online)",
+      "IsShow": 0,
+      "Type": 0,
+      "Weight": 1,
+      "Remark": null,
+      "CreateTime": "2026-08-10T04:00:00.000Z",
+      "OrgID": 4565,
+      "categoryList": [
+        {
+          "CategoryID": 18023036,
+          "ClientID": 223476,
+          "L1": "Soup",
+          "L2": "",
+          "CategoryGroupID": 5,
+          "Type": 0,
+          "IsShow": 0,
+          "FollowItemGroupID": "",
+          "BottonColor": null,
+          "Weight": 14,
+          "Remark": "",
+          "CreateTime": "2026-08-10T04:00:00.000Z",
+          "OrgID": 4565,
+          "TimeGroupID": 0,
+          "menuList": [
+            {
+              "MenuID": 363190361,
+              "L1": "Miso Soup",
+              "L2": "",
+              "Price1": 295,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363190362,
+              "L1": "Clear Soup",
+              "L2": "",
+              "Price1": 295,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363190363,
+              "L1": "Egg Drop Soup",
+              "L2": "",
+              "Price1": 350,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363190364,
+              "L1": "Hot & Sour Soup",
+              "L2": "",
+              "Price1": 450,
+              "Remark": ""
+            }
+          ]
+        },
+        {
+          "CategoryID": 18023037,
+          "ClientID": 293016,
+          "L1": "Salad ",
+          "L2": "",
+          "CategoryGroupID": 5,
+          "Type": 0,
+          "IsShow": 0,
+          "FollowItemGroupID": "",
+          "BottonColor": null,
+          "Weight": 14,
+          "Remark": "",
+          "CreateTime": "2026-08-10T04:00:00.000Z",
+          "OrgID": 4565,
+          "TimeGroupID": 0,
+          "menuList": [
+            {
+              "MenuID": 363190365,
+              "L1": "Green Salad",
+              "L2": "",
+              "Price1": 595,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363190366,
+              "L1": "Seaweed Salad",
+              "L2": "",
+              "Price1": 650,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363190367,
+              "L1": "Avocado Salad",
+              "L2": "",
+              "Price1": 750,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363190368,
+              "L1": "Kani Salad",
+              "L2": "",
+              "Price1": 750,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363190369,
+              "L1": "Spicy Kani Salad",
+              "L2": "",
+              "Price1": 750,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363190370,
+              "L1": "Mango Kani Salad",
+              "L2": "",
+              "Price1": 750,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363190371,
+              "L1": "House Special Salad",
+              "L2": "",
+              "Price1": 1295,
+              "Remark": "Crab meat, shrimp, lettuce, seaweed salad, mango, cucumber, masago, w. special sauce"
+            }
+          ]
+        },
+        {
+          "CategoryID": 18023042,
+          "ClientID": 223477,
+          "L1": "Sushi Bar Appetizers ",
+          "L2": "",
+          "CategoryGroupID": 5,
+          "Type": 0,
+          "IsShow": 0,
+          "FollowItemGroupID": "",
+          "BottonColor": null,
+          "Weight": 13,
+          "Remark": "",
+          "CreateTime": "2026-08-10T04:00:00.000Z",
+          "OrgID": 4565,
+          "TimeGroupID": 0,
+          "menuList": [
+            {
+              "MenuID": 363190372,
+              "L1": "Spicy Tuna Tartar",
+              "L2": "",
+              "Price1": 995,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363190373,
+              "L1": "Spicy Salmon Tartar",
+              "L2": "",
+              "Price1": 995,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363190374,
+              "L1": "Sushi Appetizer (5)",
+              "L2": "",
+              "Price1": 1195,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363190375,
+              "L1": "Spicy Salmon Jalapeno (4)",
+              "L2": "",
+              "Price1": 1195,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363190376,
+              "L1": "Spicy Tuna Jalapeno (4)",
+              "L2": "",
+              "Price1": 1195,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363190377,
+              "L1": "Pepper Tuna Tataki (8)",
+              "L2": "",
+              "Price1": 1195,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363190378,
+              "L1": "Yuzu Salmon (6)",
+              "L2": "",
+              "Price1": 1295,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363190379,
+              "L1": "Sashimi Appetizer (6)",
+              "L2": "",
+              "Price1": 1395,
+              "Remark": ""
+            }
+          ]
+        },
+        {
+          "CategoryID": 18023047,
+          "ClientID": 223478,
+          "L1": "Kitchen Appetizers ",
+          "L2": "",
+          "CategoryGroupID": 5,
+          "Type": 0,
+          "IsShow": 0,
+          "FollowItemGroupID": "",
+          "BottonColor": null,
+          "Weight": 12,
+          "Remark": "",
+          "CreateTime": "2026-08-10T04:00:00.000Z",
+          "OrgID": 4565,
+          "TimeGroupID": 0,
+          "menuList": [
+            {
+              "MenuID": 363189220,
+              "L1": "Edamame",
+              "L2": "",
+              "Price1": 550,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363189241,
+              "L1": "Harumaki (2)",
+              "L2": "",
+              "Price1": 550,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363189263,
+              "L1": "Chicken Yakitori (3)",
+              "L2": "",
+              "Price1": 595,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363189286,
+              "L1": "Spicy Edamame",
+              "L2": "",
+              "Price1": 695,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363189312,
+              "L1": "Crab Rangoon (6)",
+              "L2": "",
+              "Price1": 750,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363189338,
+              "L1": "Gyoza (6)",
+              "L2": "",
+              "Price1": 750,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363189367,
+              "L1": "Shumai (6)",
+              "L2": "",
+              "Price1": 750,
+              "Remark": ""
+            },
+            {
+              "MenuID": 363189397,
+              "L1": "Takoyaki (6)",
+              "L2": "",
+              "Price1": 750,
+              "Remark": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

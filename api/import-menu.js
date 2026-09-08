@@ -4,8 +4,8 @@
  *
  * Flow:
  * 1) Fetch page HTML / PDF (URL), use pasted text, or accept uploaded media
- * 2) If Chowbus-style JSON is embedded, extract dish names then grocery-price them
- * 3) Otherwise ask Gemini (text or multimodal) for names + grocery $/piece estimates
+ * 2) Run multi-platform extractors (Chowbus, HonorMenu, generic JSON, …)
+ * 3) Otherwise ask Gemini (text or multimodal) for names + estimated $/piece
  * 4) Return cleaned JSON to the browser
  *
  * Required env (set in Vercel project settings — never commit the real key):
@@ -14,16 +14,31 @@
  *   GEMINI_MODEL  (default: gemini-3.6-flash)
  */
 
+import {
+  STRUCTURED_MIN_ITEMS,
+  extractStructuredMenu,
+  isDeliveryMarketplaceHost,
+  isHonorMenuHost,
+  isMostlyTemplatePlaceholders,
+  looksLikeBotWall,
+} from './_lib/menuExtractors.js'
+
 const MAX_BODY_CHARS = 80_000
 const MAX_UPLOAD_BODY_CHARS = Math.floor(3.8 * 1024 * 1024)
 const MAX_FILE_BASE64_CHARS = Math.floor(3.5 * 1024 * 1024)
 const MAX_FILE_BYTES = Math.floor(2.6 * 1024 * 1024)
 const MAX_PAGE_CHARS = 40_000
 const MAX_MENU_ITEMS = 80
-const CHOWBUS_MIN_ITEMS = 8
 const FETCH_TIMEOUT_MS = 12_000
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX = 8
+
+const BROWSER_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+const ORDERING_FALLBACK_HINT =
+  'Ordering apps often hide menus from bots. Try a photo, PDF, or paste dish names — Chowbus and HonorMenu links are supported when their menu API is public.'
+
 
 const ALLOWED_MEDIA_TYPES = new Set([
   'application/pdf',
@@ -119,73 +134,6 @@ function piecesFromLabel(name, description = '') {
   return 1
 }
 
-function toPricePerPiece(listPrice, name, description = '') {
-  const price = Number(listPrice)
-  if (!Number.isFinite(price) || price < 0) return 0
-  const pieces = piecesFromLabel(name, description)
-  return Math.round((price / pieces) * 100) / 100
-}
-
-function decodeHtmlEntities(value) {
-  return String(value || '')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&#39;/gi, "'")
-    .replace(/&quot;/gi, '"')
-    .replace(/\\u0026/gi, '&')
-    .trim()
-}
-
-/**
- * Chowbus / similar POS pages embed dishes in Next.js flight scripts as
- * heavily escaped JSON, e.g. \\\"name\\\":\\\"edamame\\\", \\\"menu_price\\\":\\\"4.99\\\".
- * Plain-text stripping removes those scripts, so we parse the raw HTML.
- */
-function normalizeEmbeddedJson(html) {
-  let s = String(html || '')
-  for (let i = 0; i < 4; i++) {
-    if (/"menu_price"\s*:/.test(s)) break
-    s = s.replace(/\\"/g, '"').replace(/\\u0026/gi, '&')
-  }
-  return s
-}
-
-function extractChowbusMenuItems(html) {
-  const raw = normalizeEmbeddedJson(html)
-  const found = []
-  const seen = new Set()
-
-  function consider(nameRaw, priceRaw, descriptionRaw = '') {
-    const name = decodeHtmlEntities(nameRaw).replace(/\s+/g, ' ')
-    if (!name || name.length > 80) return
-    const key = name.toLowerCase()
-    if (seen.has(key)) return
-    const listPrice = Number(priceRaw)
-    if (!Number.isFinite(listPrice) || listPrice <= 0) return
-    if (/^(cart|subtotal|total|tax|tip|delivery|service fee)\b/i.test(name)) return
-    seen.add(key)
-    const description = decodeHtmlEntities(descriptionRaw)
-    found.push({
-      name,
-      listPrice,
-      description,
-      pricePerPiece: toPricePerPiece(listPrice, name, description),
-    })
-  }
-
-  // Real dishes include kitchen_name; category rows do not (avoids pairing
-  // category titles with the next item's menu_price).
-  const itemRe =
-    /"name"\s*:\s*"([^"]{1,120})"\s*,\s*"foreign_name"\s*:\s*"([^"]*)"\s*,\s*"kitchen_name"\s*:\s*"([^"]*)"[\s\S]{0,400}?"menu_price"\s*:\s*"([0-9]+(?:\.[0-9]+)?)"(?:[\s\S]{0,400}?"description"\s*:\s*"([^"]*)")?/g
-  let match
-  while ((match = itemRe.exec(raw))) {
-    consider(match[1], match[4], match[5] || '')
-  }
-
-  return found
-}
-
 function formatStructuredMenuText(items) {
   // Names (+ piece counts) only — never pass restaurant menu prices into Gemini.
   return items
@@ -199,8 +147,7 @@ function formatStructuredMenuText(items) {
 }
 
 /**
- * Offline grocery / supermarket per-piece estimates when Gemini is unavailable.
- * Tuned to HEB / Kroger / Costco-pack style prepared sushi, not restaurant à la carte.
+ * Offline estimated menu value per piece when Gemini is unavailable.
  */
 function groceryEstimateFromName(name, description = '') {
   const text = `${name || ''} ${description || ''}`.toLowerCase()
@@ -250,15 +197,22 @@ function bufferToBase64(buffer) {
 async function fetchPage(url) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+  let hostname = ''
+  try {
+    hostname = new URL(url).hostname
+  } catch {
+    hostname = ''
+  }
+
   try {
     const response = await fetch(url, {
       signal: controller.signal,
       redirect: 'follow',
       headers: {
-        'User-Agent':
-          'WorthBiteMenuBot/1.0 (+https://vercel.app; AYCE sushi worth-it calculator)',
+        'User-Agent': BROWSER_UA,
         Accept:
-          'text/html,application/xhtml+xml,application/pdf,text/plain;q=0.9,image/*;q=0.8,*/*;q=0.7',
+          'text/html,application/xhtml+xml,application/pdf,application/json,text/plain;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
       },
     })
     if (!response.ok) {
@@ -278,7 +232,9 @@ async function fetchPage(url) {
       return {
         kind: 'pdf',
         text: '',
+        html: '',
         structured: [],
+        platform: 'pdf',
         media: { mimeType: 'application/pdf', base64: bufferToBase64(bytes) },
       }
     }
@@ -291,17 +247,45 @@ async function fetchPage(url) {
     }
 
     const html = await response.text()
-    const structured = extractChowbusMenuItems(html)
     const text = htmlToPlainText(html).slice(0, MAX_PAGE_CHARS)
-    if (structured.length < CHOWBUS_MIN_ITEMS && text.length < 40) {
+
+    if (looksLikeBotWall(html, text)) {
       throw new Error(
-        'The page had almost no readable text (often a JavaScript-only menu). Upload a photo/PDF or paste the menu text instead.',
+        `That site blocked automated access (bot wall). ${ORDERING_FALLBACK_HINT}`,
       )
     }
-    return { kind: 'html', html, text, structured, media: null }
+
+    const extracted = await extractStructuredMenu({ url, html })
+    const structured = extracted.items || []
+
+    const allowEmptyShell =
+      isHonorMenuHost(hostname) ||
+      isDeliveryMarketplaceHost(hostname) ||
+      structured.length >= STRUCTURED_MIN_ITEMS
+
+    if (
+      structured.length < STRUCTURED_MIN_ITEMS &&
+      text.length < 40 &&
+      !allowEmptyShell
+    ) {
+      throw new Error(
+        `The page had almost no readable text (often a JavaScript-only menu). ${ORDERING_FALLBACK_HINT}`,
+      )
+    }
+
+    return {
+      kind: 'html',
+      html,
+      text,
+      structured,
+      platform: extracted.platform,
+      media: null,
+    }
   } catch (err) {
     if (err.name === 'AbortError') {
-      throw new Error('Timed out loading that website. Try again, upload a photo/PDF, or paste menu text.')
+      throw new Error(
+        `Timed out loading that website. ${ORDERING_FALLBACK_HINT}`,
+      )
     }
     throw err
   } finally {
@@ -315,14 +299,26 @@ function countPriceSignals(text) {
   return dollar + decimals
 }
 
+function countDishLikeLines(text) {
+  return String(text || '')
+    .split(/\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length >= 3 && /[a-zA-Z]{3,}/.test(l)).length
+}
+
 /**
- * URL pages without price-like text are usually marketing/wiki/SPA shells.
+ * URL pages without extractors/prices are usually marketing/wiki/SPA shells.
  * Pasted text can be dish names only, so prices are not required there.
  */
-function assertUsableMenuSource(text, { requirePrices }) {
-  if (requirePrices && countPriceSignals(text) < 2) {
+function assertUsableMenuSource(text, { requirePrices, allowSparse = false }) {
+  if (isMostlyTemplatePlaceholders(text) && !allowSparse) {
     throw new Error(
-      'That page does not look like a priced restaurant menu. Upload a photo/PDF or paste the menu text instead.',
+      `That page does not look like a priced restaurant menu. ${ORDERING_FALLBACK_HINT}`,
+    )
+  }
+  if (requirePrices && countPriceSignals(text) < 2 && countDishLikeLines(text) < 8) {
+    throw new Error(
+      `That page does not look like a priced restaurant menu. ${ORDERING_FALLBACK_HINT}`,
     )
   }
 }
@@ -367,7 +363,7 @@ function buildPrompt(sourceLabel, { hasMedia = false, menuText = '' } = {}) {
     ? `The restaurant menu is attached as an image or PDF. Extract dishes that are clearly listed there.`
     : `Menu / dish list:\n${menuText}`
 
-  return `You help an AYCE worth-it calculator. Extract dish names from a restaurant menu, then price each dish at GROCERY / SUPERMARKET prepared-sushi value (HEB, Kroger, Costco pack style)—NOT the restaurant’s à la carte price.
+  return `You help an AYCE worth-it calculator. Extract dish names from a restaurant menu, then price each dish at ESTIMATED comparable menu value (typical U.S. prepared-sushi estimates)—NOT as a claim of exact restaurant à la carte prices.
 
 Source: ${sourceLabel}
 
@@ -380,11 +376,11 @@ Rules:
 - When isRestaurantMenu is true: include sushi, sashimi, nigiri, rolls, common sides (edamame, miso, etc.), AND robata, yakitori, kushiyaki, skewers, and similar grilled/kitchen items useful for AYCE tracking.
 - Skip drinks, desserts, and non-food noise when possible.
 - name: short customer-facing item name from the menu.
-- pricePerPiece: typical U.S. GROCERY-STORE prepared sushi USD value PER PIECE (what you’d pay at HEB/Kroger-style sushi, not a sit-down restaurant).
-  - Ignore restaurant dollar amounts printed on the menu when setting pricePerPiece.
-  - Ballpark guides: nigiri/sashimi ~$1.00–$1.75/pc; common rolls ~$0.50–$0.90/pc; fancy rolls ~$0.80–$1.25/pc; sides lower grocery analogs.
-  - If the name says 8 pcs / (8Pcs) / 8 pieces, pricePerPiece is still the grocery value of ONE piece (not the whole roll).
-  - For skewers, use a grocery meat-skewer analog per skewer.
+- pricePerPiece: estimated USD value PER PIECE for worth-it math.
+  - Ignore restaurant dollar amounts printed on the menu when setting pricePerPiece (use estimates).
+  - Ballpark guides: nigiri/sashimi ~$1.00–$1.75/pc; common rolls ~$0.50–$0.90/pc; fancy rolls ~$0.80–$1.25/pc; sides lower analogs.
+  - If the name says 8 pcs / (8Pcs) / 8 pieces, pricePerPiece is still the estimated value of ONE piece (not the whole roll).
+  - For skewers, use a meat-skewer analog per skewer.
 - Cap at ${MAX_MENU_ITEMS} items. Prefer popular/common items if the menu is huge.
 - pricePerPiece must be a number >= 0 with at most 2 decimal places.
 
@@ -653,6 +649,7 @@ export default async function handler(req, res) {
     let sourceLabel = media ? 'uploaded menu file' : 'pasted menu text'
     let requirePrices = false
     let structuredItems = []
+    let structuredPlatform = 'none'
 
     if (url) {
       if (!isValidHttpUrl(url)) {
@@ -662,12 +659,16 @@ export default async function handler(req, res) {
       sourceLabel = url
       const page = await fetchPage(url)
       if (page.kind === 'pdf' && page.media) {
-        // Prefer URL PDF when present; uploaded file can still be included as extra context via pasted path only.
         media = page.media
       } else {
-        structuredItems = page.structured
+        structuredItems = page.structured || []
+        structuredPlatform = page.platform || 'none'
         menuText = page.text
-        requirePrices = !pasted && !media && structuredItems.length < CHOWBUS_MIN_ITEMS
+        // Skip price-signal gate when extractors already found a real menu.
+        requirePrices =
+          !pasted &&
+          !media &&
+          structuredItems.length < STRUCTURED_MIN_ITEMS
         if (pasted) {
           menuText = `${menuText}\n\nAdditional pasted text:\n${pasted}`.slice(0, MAX_PAGE_CHARS)
         }
@@ -676,15 +677,15 @@ export default async function handler(req, res) {
       menuText = pasted.slice(0, MAX_PAGE_CHARS)
     }
 
-    // Chowbus: keep dish names from the restaurant JSON, but price at grocery baseline.
-    if (structuredItems.length >= CHOWBUS_MIN_ITEMS) {
+    // Structured extractors: keep dish names, reprice with estimates.
+    if (structuredItems.length >= STRUCTURED_MIN_ITEMS) {
       const named = structuredItems.slice(0, Math.max(MAX_MENU_ITEMS, 120))
       const nameListText = formatStructuredMenuText(named)
       let items
       try {
         const priced = await callGemini({
           menuText: nameListText,
-          sourceLabel: `${sourceLabel} (grocery reprice)`,
+          sourceLabel: `${sourceLabel} (${structuredPlatform} reprice)`,
           skipGrounding: true,
         })
         items = mergeGroceryPrices(named, priced)
@@ -693,11 +694,11 @@ export default async function handler(req, res) {
       }
       if (!items.length) {
         sendJson(res, 422, {
-          error: 'No menu items found. Try another page, photo/PDF, or paste the menu text.',
+          error: `No menu items found. ${ORDERING_FALLBACK_HINT}`,
         })
         return
       }
-      sendJson(res, 200, { items })
+      sendJson(res, 200, { items, platform: structuredPlatform })
       return
     }
 
@@ -709,7 +710,10 @@ export default async function handler(req, res) {
     }
 
     if (!media) {
-      assertUsableMenuSource(menuText, { requirePrices })
+      assertUsableMenuSource(menuText, {
+        requirePrices,
+        allowSparse: structuredItems.length > 0,
+      })
     }
 
     const items = await callGeminiWithGroceryFallback({
@@ -720,7 +724,7 @@ export default async function handler(req, res) {
     })
     if (!items.length) {
       sendJson(res, 422, {
-        error: 'No menu items found. Try another page, photo/PDF, or paste the menu text.',
+        error: `No menu items found. ${ORDERING_FALLBACK_HINT}`,
       })
       return
     }
@@ -736,7 +740,9 @@ export default async function handler(req, res) {
           ? 400
           : /too large/i.test(message)
             ? 413
-            : /does not look like|Could not match dishes|No menu items|No sushi-like/i.test(message)
+            : /does not look like|Could not match dishes|No menu items|No sushi-like|bot wall|almost no readable/i.test(
+                  message,
+                )
               ? 422
               : 502
     sendJson(res, status, { error: message })

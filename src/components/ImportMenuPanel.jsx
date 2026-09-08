@@ -176,8 +176,9 @@ export default function ImportMenuPanel({ onReplaceMenu }) {
       <div className="section-head">
         <h2 id="import-heading">Import menu</h2>
         <p>
-          Paste a menu page or PDF link, upload a menu photo/PDF, or paste text. We’ll list dishes
-          and estimate comparable menu prices per piece.
+          Paste a menu URL (Chowbus, HonorMenu, and many pages with embedded JSON), upload a
+          photo/PDF, or paste text. DoorDash/Uber-style apps often block bots — use photo or paste
+          there. We’ll list dishes and estimate comparable menu values per piece.
         </p>
       </div>
 

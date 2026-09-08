@@ -404,6 +404,32 @@
   text-decoration: none;
 }
 
+.find-section__title {
+  margin: 0.5rem 0 0.55rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9fc4bc;
+}
+
+.find-hint {
+  margin: 0;
+  color: #b7d4ce;
+  font-size: 0.9rem;
+}
+
+.find-places-attr {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  color: #9fc4bc;
+  text-align: center;
+}
+
+.find-places-attr a {
+  color: #d7ebe6;
+}
+
 .restaurant-meta {
   padding: 1rem 1.05rem;
   border-radius: var(--radius);

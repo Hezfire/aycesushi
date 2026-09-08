@@ -7,6 +7,11 @@ CREATE TABLE IF NOT EXISTS restaurants (
   city TEXT NOT NULL,
   state TEXT NOT NULL,
   google_place_id TEXT UNIQUE,
+  external_provider TEXT,
+  external_place_id TEXT,
+  formatted_address TEXT,
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
   ayce_price_default NUMERIC(10, 2),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   name_norm TEXT NOT NULL,
@@ -16,6 +21,10 @@ CREATE TABLE IF NOT EXISTS restaurants (
 
 CREATE UNIQUE INDEX IF NOT EXISTS restaurants_norm_unique
   ON restaurants (name_norm, city_norm, state_norm);
+
+CREATE UNIQUE INDEX IF NOT EXISTS restaurants_external_place_unique
+  ON restaurants (external_provider, external_place_id)
+  WHERE external_provider IS NOT NULL AND external_place_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS meal_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

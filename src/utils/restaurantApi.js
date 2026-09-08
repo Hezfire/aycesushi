@@ -2,15 +2,29 @@
  * Client helpers for restaurant search, create, menu, and recent records.
  */
 
-export async function searchRestaurants(query, limit = 20) {
+export async function searchRestaurants(query, limit = 20, location = '') {
   const params = new URLSearchParams({
     q: String(query || ''),
     limit: String(limit),
   })
+  if (location) params.set('location', String(location))
   const response = await fetch(`/api/restaurants?${params}`)
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
     throw new Error(data.error || 'Could not search restaurants.')
+  }
+  return data
+}
+
+export async function createRestaurantFromGeoapify(payload) {
+  const response = await fetch('/api/restaurants/from-geoapify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(data.error || 'Could not import restaurant from places search.')
   }
   return data
 }

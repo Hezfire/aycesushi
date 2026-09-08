@@ -71,8 +71,9 @@ Set:
 
 - `GEMINI_API_KEY` — Google AI Studio (menu import)
 - `DATABASE_URL` — Neon Postgres connection string (restaurants, menus, leaderboard)
+- `GEOAPIFY_API_KEY` (optional) — Geoapify Address Autocomplete for restaurant search on `/find`. Free plan has daily credits; requires Geoapify + OpenStreetMap attribution when results are shown. Without the key, Find still searches WorthBite (Neon) and supports manual add.
 
-Tables (including `menu_items`) are created automatically on the first API request. See `api/schema.sql`.
+Tables (including `menu_items` and external place columns) are created automatically on the first API request. See `api/schema.sql`.
 
 ### Run
 
@@ -85,7 +86,7 @@ npm run dev:full
 ## Deploy (Vercel)
 
 1. Import the GitHub repo on Vercel  
-2. Set `GEMINI_API_KEY` and `DATABASE_URL`  
+2. Set `GEMINI_API_KEY`, `DATABASE_URL`, and optionally `GEOAPIFY_API_KEY`  
 3. Deploy (and redeploy after changing env)
 
 Public app: `https://aycesushi.vercel.app`
@@ -125,4 +126,6 @@ Public app: `https://aycesushi.vercel.app`
 - Ranking: `beat_buffet_by` DESC, then value DESC, then earlier `completed_at`
 - Duplicate `client_meal_id` rejected
 - No login; anonymous `visitorId` highlights your row
-- `google_place_id` reserved for a future Places search
+- External places: `external_provider` + `external_place_id` (unique together); Geoapify imports also store lat/lng + `formatted_address`
+- Find flow: Neon ILIKE first, then Geoapify autocomplete when `GEOAPIFY_API_KEY` + location are set; selecting a place find-or-creates in Neon (no Geoapify call on restaurant detail pages)
+- `google_place_id` reserved / unused for now

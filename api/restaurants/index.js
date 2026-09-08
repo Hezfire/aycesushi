@@ -1,6 +1,6 @@
 /**
- * GET /api/restaurants?q=&limit= — search
- * POST /api/restaurants — create
+ * GET /api/restaurants?q=&location=&limit= — Neon search + optional Geoapify suggestions
+ * POST /api/restaurants — create manual restaurant
  */
 
 import {
@@ -12,6 +12,13 @@ import {
 } from '../_lib/db.js'
 import { sanitizeRestaurantInput } from '../_lib/leaderboard.js'
 import { mapRestaurant } from '../_lib/restaurants.js'
+import {
+  filterGeoapifyAlreadyInNeon,
+  GEOAPIFY_MIN_TERM_LENGTH,
+  isGeoapifyEnabled,
+  parseRestaurantQuery,
+  searchGeoapifyPlaces,
+} from '../_lib/geoapify.js'
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -28,10 +35,10 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       const url = new URL(req.url, 'http://localhost')
-      const q = String(url.searchParams.get('q') || '')
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, ' ')
+      const rawQ = String(url.searchParams.get('q') || '').trim()
+      const locationParam = String(url.searchParams.get('location') || '').trim()
+      const { term, locationHint } = parseRestaurantQuery(rawQ, locationParam)
+      const q = term.toLowerCase().replace(/\s+/g, ' ')
       const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit')) || 20))
       const pattern = q ? `%${q}%` : '%'
 
@@ -43,6 +50,11 @@ export default async function handler(req, res) {
               r.city,
               r.state,
               r.google_place_id,
+              r.external_provider,
+              r.external_place_id,
+              r.formatted_address,
+              r.latitude,
+              r.longitude,
               r.ayce_price_default,
               r.created_at,
               COALESCE(stats.entry_count, 0)::int AS entry_count,
@@ -71,6 +83,11 @@ export default async function handler(req, res) {
               r.city,
               r.state,
               r.google_place_id,
+              r.external_provider,
+              r.external_place_id,
+              r.formatted_address,
+              r.latitude,
+              r.longitude,
               r.ayce_price_default,
               r.created_at,
               COALESCE(stats.entry_count, 0)::int AS entry_count,
@@ -89,13 +106,42 @@ export default async function handler(req, res) {
             LIMIT ${limit}
           `
 
+      const restaurants = rows.map((row) =>
+        mapRestaurant(row, {
+          entryCount: Number(row.entry_count) || 0,
+          topScore: row.top_beat != null ? Number(row.top_beat) : null,
+        }),
+      )
+
+      let placeSuggestions = []
+      let placesError = null
+      const placesEnabled = isGeoapifyEnabled()
+      const canSearchPlaces =
+        placesEnabled &&
+        term.length >= GEOAPIFY_MIN_TERM_LENGTH &&
+        Boolean(locationHint) &&
+        checkRateLimit(req)
+
+      if (placesEnabled && term.length >= GEOAPIFY_MIN_TERM_LENGTH && !locationHint) {
+        placesError = 'Enter a city or location to search places.'
+      } else if (canSearchPlaces) {
+        try {
+          const hits = await searchGeoapifyPlaces({
+            term,
+            location: locationHint,
+            limit: 8,
+          })
+          placeSuggestions = filterGeoapifyAlreadyInNeon(hits, restaurants)
+        } catch (err) {
+          placesError = err?.message || 'Place search failed.'
+        }
+      }
+
       sendJson(res, 200, {
-        restaurants: rows.map((row) =>
-          mapRestaurant(row, {
-            entryCount: Number(row.entry_count) || 0,
-            topScore: row.top_beat != null ? Number(row.top_beat) : null,
-          }),
-        ),
+        restaurants,
+        placeSuggestions,
+        placesEnabled,
+        placesError,
       })
       return
     }
@@ -123,7 +169,10 @@ export default async function handler(req, res) {
       }
 
       const existing = await sql`
-        SELECT id, name, city, state, google_place_id, ayce_price_default, created_at
+        SELECT
+          id, name, city, state, google_place_id,
+          external_provider, external_place_id, formatted_address,
+          latitude, longitude, ayce_price_default, created_at
         FROM restaurants
         WHERE name_norm = ${place.nameNorm}
           AND city_norm = ${place.cityNorm}
@@ -148,7 +197,10 @@ export default async function handler(req, res) {
           ${place.stateNorm},
           ${aycePriceDefault}
         )
-        RETURNING id, name, city, state, google_place_id, ayce_price_default, created_at
+        RETURNING
+          id, name, city, state, google_place_id,
+          external_provider, external_place_id, formatted_address,
+          latitude, longitude, ayce_price_default, created_at
       `
       sendJson(res, 201, { restaurant: mapRestaurant(inserted[0]), created: true })
       return

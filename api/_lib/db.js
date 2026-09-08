@@ -29,6 +29,11 @@ export async function ensureSchema() {
       city TEXT NOT NULL,
       state TEXT NOT NULL,
       google_place_id TEXT UNIQUE,
+      external_provider TEXT,
+      external_place_id TEXT,
+      formatted_address TEXT,
+      latitude DOUBLE PRECISION,
+      longitude DOUBLE PRECISION,
       ayce_price_default NUMERIC(10, 2),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       name_norm TEXT NOT NULL,
@@ -79,6 +84,17 @@ export async function ensureSchema() {
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS menu_items_restaurant_name_unique
       ON menu_items (restaurant_id, lower(name))
+  `
+  // Existing DBs: add Geoapify / external place columns safely
+  await sql`ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS external_provider TEXT`
+  await sql`ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS external_place_id TEXT`
+  await sql`ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS formatted_address TEXT`
+  await sql`ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION`
+  await sql`ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION`
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS restaurants_external_place_unique
+      ON restaurants (external_provider, external_place_id)
+      WHERE external_provider IS NOT NULL AND external_place_id IS NOT NULL
   `
   schemaReady = true
 }

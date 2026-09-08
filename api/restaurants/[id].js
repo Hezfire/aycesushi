@@ -55,7 +55,10 @@ export default async function handler(req, res) {
         UPDATE restaurants
         SET ayce_price_default = ${price}
         WHERE id = ${id}::uuid
-        RETURNING id, name, city, state, google_place_id, ayce_price_default, created_at
+        RETURNING
+          id, name, city, state, google_place_id,
+          external_provider, external_place_id, formatted_address,
+          latitude, longitude, ayce_price_default, created_at
       `
       if (!updated.length) {
         sendJson(res, 404, { error: 'Restaurant not found.' })
@@ -71,7 +74,10 @@ export default async function handler(req, res) {
     }
 
     const restaurants = await sql`
-      SELECT id, name, city, state, google_place_id, ayce_price_default, created_at
+      SELECT
+        id, name, city, state, google_place_id,
+        external_provider, external_place_id, formatted_address,
+        latitude, longitude, ayce_price_default, created_at
       FROM restaurants
       WHERE id = ${id}::uuid
       LIMIT 1

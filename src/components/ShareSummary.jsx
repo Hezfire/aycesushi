@@ -10,7 +10,7 @@ function buildSummary({ totalPieces, eatenValue, pricePaid, worthIt }) {
   const lines = [
     'WorthBite — AYCE check-in',
     `${totalPieces} piece${totalPieces === 1 ? '' : 's'} logged`,
-    `Grocery value: ${formatMoney(eatenValue)}`,
+    `Menu value: ${formatMoney(eatenValue)}`,
     `Paid: ${formatMoney(pricePaid)}`,
   ]
 

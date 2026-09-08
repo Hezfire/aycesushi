@@ -64,6 +64,22 @@ export async function ensureSchema() {
         completed_at ASC
       )
   `
+  await sql`
+    CREATE TABLE IF NOT EXISTS menu_items (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      restaurant_id UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'Other',
+      estimated_value NUMERIC(10, 2) NOT NULL,
+      pricing_unit TEXT NOT NULL DEFAULT 'piece',
+      source TEXT NOT NULL DEFAULT 'estimate',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS menu_items_restaurant_name_unique
+      ON menu_items (restaurant_id, lower(name))
+  `
   schemaReady = true
 }
 

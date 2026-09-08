@@ -1,5 +1,5 @@
 /**
- * LeaderboardSubmit — CTA + form to post a completed meal to a restaurant board.
+ * LeaderboardSubmit — CTA + form to post a completed meal (display name only when restaurant known).
  */
 
 import { useState } from 'react'
@@ -13,16 +13,21 @@ export default function LeaderboardSubmit({
   alreadySubmitted,
   clientMealId,
   visitorId,
+  restaurantId,
+  restaurantName,
+  restaurantCity,
+  restaurantState,
   aycePricePaid,
   totalMenuValueEaten,
   piecesEaten,
   onSubmitted,
+  compact = false,
 }) {
   const [open, setOpen] = useState(false)
   const [displayName, setDisplayName] = useState('')
-  const [restaurantName, setRestaurantName] = useState('')
-  const [city, setCity] = useState('')
-  const [state, setState] = useState('')
+  const [name, setName] = useState(restaurantName || '')
+  const [city, setCity] = useState(restaurantCity || '')
+  const [state, setState] = useState(restaurantState || '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
@@ -34,15 +39,20 @@ export default function LeaderboardSubmit({
     setError('')
     setLoading(true)
     try {
-      const data = await submitLeaderboardScore({
+      const payload = {
         clientMealId,
         visitorId,
         displayName,
-        restaurant: { name: restaurantName, city, state },
         aycePricePaid,
         totalMenuValueEaten,
         piecesEaten,
-      })
+      }
+      if (restaurantId) {
+        payload.restaurantId = restaurantId
+      } else {
+        payload.restaurant = { name, city, state }
+      }
+      const data = await submitLeaderboardScore(payload)
       setResult(data)
       onSubmitted?.(data)
       setOpen(false)
@@ -53,7 +63,7 @@ export default function LeaderboardSubmit({
     }
   }
 
-  if (result) {
+  if (result && !compact) {
     const { entry, rank, restaurant } = result
     const path = `/restaurants/${restaurant.id}/leaderboard`
     return (
@@ -79,6 +89,16 @@ export default function LeaderboardSubmit({
     )
   }
 
+  if (result && compact) {
+    return (
+      <section className="lb-submit lb-submit--success" aria-live="polite">
+        <p className="lb-submit__rank">
+          {rankLabel(result.rank)} at {result.restaurant.name}
+        </p>
+      </section>
+    )
+  }
+
   if (alreadySubmitted) {
     return (
       <section className="lb-submit">
@@ -97,7 +117,11 @@ export default function LeaderboardSubmit({
         <form className="lb-submit__form" onSubmit={handleSubmit}>
           <div className="section-head">
             <h2>Add me to the leaderboard</h2>
-            <p>Did you beat the buffet? Drop your name and restaurant.</p>
+            <p>
+              {restaurantId
+                ? `Post your score at ${restaurantName || 'this restaurant'}.`
+                : 'Did you beat the buffet? Drop your name and restaurant.'}
+            </p>
           </div>
 
           <label>
@@ -110,46 +134,49 @@ export default function LeaderboardSubmit({
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="SushiShark"
               disabled={loading}
+              autoFocus
             />
           </label>
-          <label>
-            <span>Restaurant</span>
-            <input
-              type="text"
-              maxLength={80}
-              required
-              value={restaurantName}
-              onChange={(e) => setRestaurantName(e.target.value)}
-              placeholder="Kimoto Premium Sushi"
-              disabled={loading}
-            />
-          </label>
-          <div className="lb-submit__row">
-            <label>
-              <span>City</span>
-              <input
-                type="text"
-                maxLength={60}
-                required
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="Houston"
-                disabled={loading}
-              />
-            </label>
-            <label>
-              <span>State</span>
-              <input
-                type="text"
-                maxLength={40}
-                required
-                value={state}
-                onChange={(e) => setState(e.target.value)}
-                placeholder="TX"
-                disabled={loading}
-              />
-            </label>
-          </div>
+
+          {!restaurantId && (
+            <>
+              <label>
+                <span>Restaurant</span>
+                <input
+                  type="text"
+                  maxLength={80}
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  disabled={loading}
+                />
+              </label>
+              <div className="lb-submit__row">
+                <label>
+                  <span>City</span>
+                  <input
+                    type="text"
+                    maxLength={60}
+                    required
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    disabled={loading}
+                  />
+                </label>
+                <label>
+                  <span>State</span>
+                  <input
+                    type="text"
+                    maxLength={40}
+                    required
+                    value={state}
+                    onChange={(e) => setState(e.target.value)}
+                    disabled={loading}
+                  />
+                </label>
+              </div>
+            </>
+          )}
 
           {error && (
             <p className="import-panel__error" role="alert">

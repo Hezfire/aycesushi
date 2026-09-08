@@ -64,7 +64,7 @@ export default function LeaderboardPage() {
         <h1>
           {restaurant.name} — {restaurant.city}, {restaurant.state}
         </h1>
-        <p className="app-header__tagline">Restaurant-specific leaderboard · Did you beat the buffet?</p>
+        <p className="app-header__tagline">Did you beat the buffet? Restaurant leaderboard.</p>
       </header>
 
       <main className="app-main">
@@ -124,7 +124,7 @@ export default function LeaderboardPage() {
                       </span>
                     </div>
                     <div className="lb-card__meta">
-                      <span>Value {formatMoney(entry.totalMenuValueEaten)}</span>
+                      <span>Menu value {formatMoney(entry.totalMenuValueEaten)}</span>
                       <span>Paid {formatMoney(entry.aycePricePaid)}</span>
                       <span>{entry.piecesEaten} pcs</span>
                       <span>{formatShortDate(entry.completedAt)}</span>

@@ -1,6 +1,5 @@
 /**
- * Worth-it math: compare grocery/store-bought sushi value eaten vs AYCE price paid.
- * Tweak thresholds here if you want different status messages.
+ * Worth-it math: compare estimated menu value eaten vs AYCE price paid.
  */
 
 export function calcEatenValue(items) {
@@ -18,27 +17,27 @@ export function calcWorthIt(eatenValue, pricePaid) {
   const ratio = paid > 0 ? value / paid : value > 0 ? Infinity : 0
 
   let status = 'waiting'
-  let message = 'Enter what you paid, then tap pieces as you eat.'
+  let message = 'Enter what you paid, then tap items as you eat.'
 
   if (paid <= 0 && value <= 0) {
     status = 'waiting'
-    message = 'Enter what you paid, then tap pieces as you eat.'
+    message = 'Enter what you paid, then tap items as you eat.'
   } else if (paid <= 0 && value > 0) {
     status = 'tracking'
-    message = 'Add your AYCE price above to see if you’re ahead.'
+    message = 'Add your AYCE price to see if you’re ahead.'
   } else if (difference < -0.005) {
     const remaining = paid - value
     status = 'behind'
-    message = `Keep going — about ${formatShort(remaining)} more to break even.`
+    message = `${formatShort(remaining)} to break even.`
   } else if (Math.abs(difference) < 0.005) {
     status = 'even'
-    message = 'Break even! Anything else is bonus value.'
+    message = 'YOU BEAT THE BUFFET — break even!'
   } else if (ratio < 1.25) {
     status = 'ahead'
-    message = 'You’re ahead — solid value so far.'
+    message = 'YOU BEAT THE BUFFET'
   } else {
     status = 'crushing'
-    message = 'Crushing it. AYCE is paying off big.'
+    message = 'YOU BEAT THE BUFFET'
   }
 
   return { difference, ratio, status, message }

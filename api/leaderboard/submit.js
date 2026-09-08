@@ -15,6 +15,7 @@ import {
   sanitizeRestaurantInput,
   validateMealNumbers,
 } from '../_lib/leaderboard.js'
+import { mapRestaurant } from '../_lib/restaurants.js'
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -57,12 +58,6 @@ export default async function handler(req, res) {
       return
     }
 
-    const placeResult = sanitizeRestaurantInput(body.restaurant)
-    if (!placeResult.ok) {
-      sendJson(res, 400, { error: placeResult.error })
-      return
-    }
-
     const mealResult = validateMealNumbers({
       aycePricePaid: body.aycePricePaid,
       totalMenuValueEaten: body.totalMenuValueEaten,
@@ -81,29 +76,49 @@ export default async function handler(req, res) {
       return
     }
 
-    const place = placeResult.value
-    let restaurantRows = await sql`
-      SELECT id, name, city, state, google_place_id, ayce_price_default, created_at
-      FROM restaurants
-      WHERE name_norm = ${place.nameNorm}
-        AND city_norm = ${place.cityNorm}
-        AND state_norm = ${place.stateNorm}
-      LIMIT 1
-    `
+    const restaurantId = String(body.restaurantId || '').trim()
+    let restaurantRows
 
-    if (!restaurantRows.length) {
+    if (restaurantId) {
       restaurantRows = await sql`
-        INSERT INTO restaurants (name, city, state, name_norm, city_norm, state_norm)
-        VALUES (
-          ${place.name},
-          ${place.city},
-          ${place.state},
-          ${place.nameNorm},
-          ${place.cityNorm},
-          ${place.stateNorm}
-        )
-        RETURNING id, name, city, state, google_place_id, ayce_price_default, created_at
+        SELECT id, name, city, state, google_place_id, ayce_price_default, created_at
+        FROM restaurants
+        WHERE id = ${restaurantId}::uuid
+        LIMIT 1
       `
+      if (!restaurantRows.length) {
+        sendJson(res, 404, { error: 'Restaurant not found.' })
+        return
+      }
+    } else {
+      const placeResult = sanitizeRestaurantInput(body.restaurant)
+      if (!placeResult.ok) {
+        sendJson(res, 400, { error: placeResult.error })
+        return
+      }
+      const place = placeResult.value
+      restaurantRows = await sql`
+        SELECT id, name, city, state, google_place_id, ayce_price_default, created_at
+        FROM restaurants
+        WHERE name_norm = ${place.nameNorm}
+          AND city_norm = ${place.cityNorm}
+          AND state_norm = ${place.stateNorm}
+        LIMIT 1
+      `
+      if (!restaurantRows.length) {
+        restaurantRows = await sql`
+          INSERT INTO restaurants (name, city, state, name_norm, city_norm, state_norm)
+          VALUES (
+            ${place.name},
+            ${place.city},
+            ${place.state},
+            ${place.nameNorm},
+            ${place.cityNorm},
+            ${place.stateNorm}
+          )
+          RETURNING id, name, city, state, google_place_id, ayce_price_default, created_at
+        `
+      }
     }
 
     const restaurant = restaurantRows[0]
@@ -164,46 +179,37 @@ export default async function handler(req, res) {
         )
     `
 
+    const countRows = await sql`
+      SELECT COUNT(*)::int AS count FROM meal_sessions WHERE restaurant_id = ${restaurant.id}
+    `
+
     sendJson(res, 200, {
-      entry: mapEntry(entry),
+      entry: {
+        id: entry.id,
+        restaurantId: entry.restaurant_id,
+        clientMealId: entry.client_meal_id,
+        visitorId: entry.visitor_id,
+        displayName: entry.display_name,
+        aycePricePaid: Number(entry.ayce_price_paid),
+        totalMenuValueEaten: Number(entry.total_menu_value_eaten),
+        beatBuffetBy: Number(entry.beat_buffet_by),
+        piecesEaten: Number(entry.pieces_eaten),
+        completedAt: entry.completed_at,
+        createdAt: entry.created_at,
+      },
       rank: rankRows[0]?.rank || 1,
+      entryCount: countRows[0]?.count || 1,
       restaurant: mapRestaurant(restaurant),
     })
   } catch (err) {
     const message = err?.message || 'Submit failed.'
     const status = /DATABASE_URL|not configured/i.test(message)
       ? 503
-      : /JSON/i.test(message)
-        ? 400
-        : 502
+      : /invalid input syntax for type uuid/i.test(message)
+        ? 404
+        : /JSON/i.test(message)
+          ? 400
+          : 502
     sendJson(res, status, { error: message })
-  }
-}
-
-function mapRestaurant(row) {
-  return {
-    id: row.id,
-    name: row.name,
-    city: row.city,
-    state: row.state,
-    googlePlaceId: row.google_place_id,
-    aycePriceDefault: row.ayce_price_default != null ? Number(row.ayce_price_default) : null,
-    createdAt: row.created_at,
-  }
-}
-
-function mapEntry(row) {
-  return {
-    id: row.id,
-    restaurantId: row.restaurant_id,
-    clientMealId: row.client_meal_id,
-    visitorId: row.visitor_id,
-    displayName: row.display_name,
-    aycePricePaid: Number(row.ayce_price_paid),
-    totalMenuValueEaten: Number(row.total_menu_value_eaten),
-    beatBuffetBy: Number(row.beat_buffet_by),
-    piecesEaten: Number(row.pieces_eaten),
-    completedAt: row.completed_at,
-    createdAt: row.created_at,
   }
 }

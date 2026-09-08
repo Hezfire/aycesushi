@@ -24,7 +24,7 @@ export default function LeaderboardShareCard({
   const shareText = [
     `I BEAT ${String(restaurantName || 'the buffet').toUpperCase()}`,
     `Paid: ${formatMoney(aycePricePaid)}`,
-    `Value eaten: ${formatMoney(totalMenuValueEaten)}`,
+    `Menu value: ${formatMoney(totalMenuValueEaten)}`,
     `Beat buffet by: ${formatBeat(beatBuffetBy)}`,
     `Rank: ${rankLabel(rank)}`,
     piecesEaten != null ? `Pieces eaten: ${piecesEaten}` : null,
@@ -67,7 +67,7 @@ export default function LeaderboardShareCard({
           <strong>{formatMoney(aycePricePaid)}</strong>
         </li>
         <li>
-          <span>Value eaten</span>
+          <span>Menu value</span>
           <strong>{formatMoney(totalMenuValueEaten)}</strong>
         </li>
         <li>
@@ -89,7 +89,7 @@ export default function LeaderboardShareCard({
       </ul>
       <p className="lb-share-card__cta">Think you can beat me?</p>
       <button type="button" className="btn btn--secondary btn--block" onClick={handleShare}>
-        Share result
+        Share my score
       </button>
       {note && (
         <p className="lb-share-card__note" role="status">

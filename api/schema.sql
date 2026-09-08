@@ -1,4 +1,4 @@
--- WorthBite leaderboard schema (Neon Postgres)
+-- WorthBite leaderboard + restaurant menus (Neon Postgres)
 -- Applied automatically on first API request via api/_lib/db.js
 
 CREATE TABLE IF NOT EXISTS restaurants (
@@ -33,3 +33,17 @@ CREATE TABLE IF NOT EXISTS meal_sessions (
 
 CREATE INDEX IF NOT EXISTS meal_sessions_leaderboard_idx
   ON meal_sessions (restaurant_id, beat_buffet_by DESC, total_menu_value_eaten DESC, completed_at ASC);
+
+CREATE TABLE IF NOT EXISTS menu_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  restaurant_id UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'Other',
+  estimated_value NUMERIC(10, 2) NOT NULL,
+  pricing_unit TEXT NOT NULL DEFAULT 'piece',
+  source TEXT NOT NULL DEFAULT 'estimate',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS menu_items_restaurant_name_unique
+  ON menu_items (restaurant_id, lower(name));

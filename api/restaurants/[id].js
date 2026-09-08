@@ -1,36 +1,72 @@
 /**
- * GET /api/restaurants/:id
- * Restaurant detail + top 3 leaderboard preview.
+ * GET /api/restaurants/:id — restaurant detail + top 3
+ * PATCH /api/restaurants/:id — update ayce_price_default
  */
 
-import { ensureSchema, getSql, sendJson } from '../_lib/db.js'
+import {
+  checkRateLimit,
+  ensureSchema,
+  getSql,
+  readJsonBody,
+  sendJson,
+} from '../_lib/db.js'
+import { mapRestaurant } from '../_lib/restaurants.js'
+
+function parseId(req) {
+  const url = new URL(req.url, 'http://localhost')
+  const parts = url.pathname.split('/').filter(Boolean)
+  const id = decodeURIComponent(parts[parts.length - 1] || '').trim()
+  if (!id || id === 'restaurants') return ''
+  return id
+}
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.statusCode = 204
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, PATCH, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
     res.end()
-    return
-  }
-
-  if (req.method !== 'GET') {
-    sendJson(res, 405, { error: 'Use GET.' })
     return
   }
 
   try {
     await ensureSchema()
     const sql = getSql()
+    const id = parseId(req)
 
-    // Vercel dynamic: /api/restaurants/:id — parse from URL
-    const url = new URL(req.url, 'http://localhost')
-    const parts = url.pathname.split('/').filter(Boolean)
-    // ["api", "restaurants", ":id"] or ["restaurants", ":id"] depending on runtime
-    const id = decodeURIComponent(parts[parts.length - 1] || '').trim()
-
-    if (!id || id === 'restaurants') {
+    if (!id) {
       sendJson(res, 400, { error: 'Restaurant id is required.' })
+      return
+    }
+
+    if (req.method === 'PATCH') {
+      if (!checkRateLimit(req)) {
+        sendJson(res, 429, { error: 'Too many requests. Please wait a minute.' })
+        return
+      }
+      const body = await readJsonBody(req)
+      const n = Number(body.aycePriceDefault)
+      if (!Number.isFinite(n) || n <= 0 || n > 5000) {
+        sendJson(res, 400, { error: 'AYCE price must be a positive number.' })
+        return
+      }
+      const price = Math.round(n * 100) / 100
+      const updated = await sql`
+        UPDATE restaurants
+        SET ayce_price_default = ${price}
+        WHERE id = ${id}::uuid
+        RETURNING id, name, city, state, google_place_id, ayce_price_default, created_at
+      `
+      if (!updated.length) {
+        sendJson(res, 404, { error: 'Restaurant not found.' })
+        return
+      }
+      sendJson(res, 200, { restaurant: mapRestaurant(updated[0]) })
+      return
+    }
+
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { error: 'Use GET or PATCH.' })
       return
     }
 
@@ -64,22 +100,16 @@ export default async function handler(req, res) {
     `
 
     const countRows = await sql`
-      SELECT COUNT(*)::int AS count
+      SELECT COUNT(*)::int AS count, MAX(beat_buffet_by) AS top_beat
       FROM meal_sessions
       WHERE restaurant_id = ${id}::uuid
     `
 
+    const entryCount = countRows[0]?.count || 0
+    const topScore = countRows[0]?.top_beat != null ? Number(countRows[0].top_beat) : null
+
     sendJson(res, 200, {
-      restaurant: {
-        id: restaurant.id,
-        name: restaurant.name,
-        city: restaurant.city,
-        state: restaurant.state,
-        googlePlaceId: restaurant.google_place_id,
-        aycePriceDefault:
-          restaurant.ayce_price_default != null ? Number(restaurant.ayce_price_default) : null,
-        createdAt: restaurant.created_at,
-      },
+      restaurant: mapRestaurant(restaurant, { entryCount, topScore }),
       topEntries: top.map((row, index) => ({
         id: row.id,
         restaurantId: row.restaurant_id,
@@ -92,7 +122,8 @@ export default async function handler(req, res) {
         completedAt: row.completed_at,
         rank: index + 1,
       })),
-      entryCount: countRows[0]?.count || 0,
+      entryCount,
+      topScore,
     })
   } catch (err) {
     const message = err?.message || 'Could not load restaurant.'

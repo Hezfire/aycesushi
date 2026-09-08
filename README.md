@@ -2,7 +2,9 @@
 
 Track what you eat at all-you-can-eat sushi and see whether you’re beating the price you paid — built for one-handed use at the table.
 
-You can also **import a restaurant menu from a website URL**. The server reads the page, uses Google Gemini (free tier) to list items, and estimates typical à la carte prices. Review those prices before you start logging pieces.
+You can also **import a restaurant menu from a website URL**. The server reads the page, uses Google Gemini (free tier) to list items, and estimates **grocery/store-bought** sushi value (not restaurant à la carte). Review those prices before you start logging pieces.
+
+After a completed meal (price paid + pieces eaten), you can **add yourself to a restaurant-specific “Beat the Buffet” leaderboard**. Scores are stored in Neon Postgres; `beat_buffet_by` is always computed on the server as value eaten − AYCE price paid.
 
 ---
 
@@ -59,17 +61,23 @@ npm run dev
 You’ll see a local address like `http://localhost:5173`.  
 Open that link in your browser.
 
-> **Note:** Menu URL import needs the API (next section). Counters and the default menu work with `npm run dev` alone.
+> **Note:** Menu URL import and leaderboard submit need the API (next section). Counters and the default menu work with `npm run dev` alone.
 
 ### Stop the app
 
 In the terminal, press `Ctrl + C`.
 
+### Run unit tests
+
+```bash
+npm test
+```
+
 ---
 
-## Test menu import locally (needs API + free Gemini key)
+## Test menu import + leaderboard locally (needs API + env)
 
-Menu import calls `/api/import-menu`, which only runs through **Vercel** (or `vercel dev`).
+Menu import and leaderboard APIs only run through **Vercel** (or `vercel dev`).
 
 ### Manual step A — Free Gemini API key
 
@@ -78,9 +86,11 @@ Menu import calls `/api/import-menu`, which only runs through **Vercel** (or `ve
 3. Create an API key (free tier).  
 4. Copy the key somewhere safe — do **not** put it in frontend code or commit it to git.
 
-### Manual step B — Vercel CLI (already in this project)
+### Manual step B — Neon database (leaderboards)
 
-No global install needed. The project includes Vercel locally.
+1. Open https://console.neon.tech and create a free project.  
+2. Copy the connection string (`DATABASE_URL`).  
+3. Tables are created automatically on the first leaderboard API request (see `api/schema.sql` for reference).
 
 ### Manual step C — Local env file
 
@@ -89,8 +99,12 @@ cd /Users/lisahadi/Projects/ayce-sushi-calculator
 cp .env.example .env.local
 ```
 
-Open `.env.local` and replace `paste_your_free_google_ai_studio_key_here` with your real key. Save.
-(If we already created `.env.local` for you, you can skip this copy step.)
+Open `.env.local` and set:
+
+- `GEMINI_API_KEY` — your Google AI Studio key  
+- `DATABASE_URL` — your Neon connection string  
+
+Save. Do not commit `.env.local`.
 
 ### Manual step D — Run front-end + API together
 
@@ -107,7 +121,7 @@ If a restaurant site blocks fetching (common for heavy JavaScript menus), use **
 
 ## Publish so everyone can use it (manual steps)
 
-These steps put the app on the public internet (free Vercel hosting). The Gemini key stays on the server so visitors cannot steal it.
+These steps put the app on the public internet (free Vercel hosting). Secrets stay on the server so visitors cannot steal them.
 
 ### 1) Push the project to GitHub (recommended)
 
@@ -121,34 +135,36 @@ These steps put the app on the public internet (free Vercel hosting). The Gemini
 3. Import this repository (or upload the project).  
 4. Framework should detect **Vite**. Leave build settings as defaults (`npm run build`, output `dist`).  
 5. Before deploying, open **Environment Variables** and add:
-   - Name: `GEMINI_API_KEY`  
-   - Value: your free Google AI Studio key  
-   - Environments: Production, Preview, Development  
+   - `GEMINI_API_KEY` — your free Google AI Studio key (Production, Preview, Development)
+   - `DATABASE_URL` — Neon Postgres connection string (required for leaderboards)
 6. Click **Deploy**.
 
 When it finishes, Vercel gives a public URL like:
 
-`https://ayce-sushi-calculator.vercel.app`
+`https://aycesushi.vercel.app`
 
 Anyone with that link can use the calculator. Optional later: add a custom domain in Vercel → Project → Settings → Domains.
 
+After changing env vars, **redeploy** so serverless functions pick them up.
+
 ### Quota note (plain language)
 
-The free Gemini allowance is shared by **all visitors** of your published site. If many people import menus, you may see “quota used up” errors until it resets. The API also rate-limits rapid repeat imports.
+The free Gemini allowance is shared by **all visitors** of your published site. If many people import menus, you may see “quota used up” errors until it resets. The API also rate-limits rapid repeat imports. Free Neon has its own usage limits.
 
 ---
 
 ## How to use at the restaurant
 
-1. (Optional) Import a menu from the restaurant’s website URL, review prices, tap **Use this menu**.  
+1. (Optional) Import a menu from the restaurant’s website URL, review grocery-baseline prices, tap **Use this menu**.  
 2. Enter what you paid for AYCE (add drinks/fees if you want them counted).  
 3. Tap **+** each time you finish a piece.  
 4. Watch the sticky banner for value eaten vs paid and the break-even meter.  
 5. Tap an item **name** to edit its price or remove it.  
 6. Use **Add custom item** for anything missing.  
-7. Tap **New meal / reset** next visit.
+7. When the meal is completable (price + pieces), tap **Add me to the leaderboard**, enter your display name and restaurant, then share or view the board.  
+8. Tap **New meal / reset** next visit.
 
-Progress auto-saves in that phone/browser until you reset.
+Progress auto-saves in that phone/browser until you reset. Leaderboard rows are stored in Neon; your anonymous visitor id is only used to highlight “your” row.
 
 ---
 
@@ -162,12 +178,25 @@ Open `src/data/defaultMenu.js`, edit names and `pricePerPiece` values, save, ref
 
 | File / folder | What it does |
 |---|---|
-| `src/data/defaultMenu.js` | Default sushi items & prices (fallback menu) |
+| `src/data/defaultMenu.js` | Default sushi items & grocery-baseline prices |
 | `src/components/ImportMenuPanel.jsx` | URL / paste import + review UI |
+| `src/components/LeaderboardSubmit.jsx` | Submit completed meal to a restaurant board |
+| `src/pages/LeaderboardPage.jsx` | Full restaurant leaderboard |
 | `api/import-menu.js` | Server: fetch page + Gemini extract/estimate |
+| `api/leaderboard/` | Submit + list leaderboard APIs |
+| `api/restaurants/[id].js` | Restaurant detail + top-3 preview |
+| `api/schema.sql` | Neon schema reference |
 | `src/hooks/useMealSession.js` | Meal state + browser save |
 | `src/utils/worthIt.js` | Break-even / “worth it” messages |
 | `vercel.json` | Vercel hosting config |
-| `.env.example` | Template for `GEMINI_API_KEY` |
-| `src/App.jsx` | Main page layout |
-# aycesushi
+| `.env.example` | Template for `GEMINI_API_KEY` + `DATABASE_URL` |
+| `src/App.jsx` | Main meal tracker |
+
+---
+
+## Leaderboard notes
+
+- Ranking: highest `beat_buffet_by`, then higher value eaten, then earlier completion time.  
+- Duplicate submit of the same meal (`client_meal_id`) is rejected.  
+- No login; display names can collide. `google_place_id` is reserved for a future Places search.  
+- Scores use grocery-baseline value eaten (honest vs inflated restaurant à la carte).

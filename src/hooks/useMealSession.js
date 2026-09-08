@@ -1,15 +1,18 @@
 /**
  * useMealSession — owns meal state and saves it to the browser's local storage
  * so a refresh mid-meal doesn't wipe progress.
- *
- * Storage key below can stay as-is unless you run multiple calculator variants.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DEFAULT_MENU_ITEMS } from '../data/defaultMenu'
 import { calcEatenValue, calcWorthIt } from '../utils/worthIt'
+import { getVisitorId } from '../utils/visitorId'
 
-const STORAGE_KEY = 'ayce-sushi-worth-it-v2'
+const STORAGE_KEY = 'ayce-sushi-worth-it-v3'
+
+function newClientMealId() {
+  return `meal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
+}
 
 function createItemFromMenu(menuItem) {
   return {
@@ -25,6 +28,8 @@ function createFreshSession() {
   return {
     pricePaid: '',
     items: DEFAULT_MENU_ITEMS.map(createItemFromMenu),
+    clientMealId: newClientMealId(),
+    leaderboardSubmitted: false,
   }
 }
 
@@ -35,9 +40,10 @@ function loadSession() {
     const parsed = JSON.parse(raw)
     if (!parsed || !Array.isArray(parsed.items)) return createFreshSession()
     return {
-      pricePaid: typeof parsed.pricePaid === 'string' || typeof parsed.pricePaid === 'number'
-        ? String(parsed.pricePaid)
-        : '',
+      pricePaid:
+        typeof parsed.pricePaid === 'string' || typeof parsed.pricePaid === 'number'
+          ? String(parsed.pricePaid)
+          : '',
       items: parsed.items.map((item) => ({
         id: String(item.id),
         name: String(item.name ?? 'Item'),
@@ -45,6 +51,11 @@ function loadSession() {
         count: Math.max(0, Math.floor(Number(item.count) || 0)),
         isCustom: Boolean(item.isCustom),
       })),
+      clientMealId:
+        typeof parsed.clientMealId === 'string' && parsed.clientMealId
+          ? parsed.clientMealId
+          : newClientMealId(),
+      leaderboardSubmitted: Boolean(parsed.leaderboardSubmitted),
     }
   } catch {
     return createFreshSession()
@@ -53,6 +64,7 @@ function loadSession() {
 
 export function useMealSession() {
   const [session, setSession] = useState(loadSession)
+  const visitorId = useMemo(() => getVisitorId(), [])
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(session))
@@ -122,7 +134,6 @@ export function useMealSession() {
     setSession(createFreshSession())
   }, [])
 
-  /** Zero piece counts only — keep current menu and price paid. */
   const clearCounts = useCallback(() => {
     setSession((prev) => ({
       ...prev,
@@ -130,7 +141,6 @@ export function useMealSession() {
     }))
   }, [])
 
-  /** Replace the whole menu (e.g. after URL import). Counts reset to 0; price paid is kept. */
   const replaceMenu = useCallback((menuItems) => {
     if (!Array.isArray(menuItems) || menuItems.length === 0) return false
     const stamp = Date.now()
@@ -143,8 +153,14 @@ export function useMealSession() {
         count: 0,
         isCustom: true,
       })),
+      clientMealId: newClientMealId(),
+      leaderboardSubmitted: false,
     }))
     return true
+  }, [])
+
+  const markLeaderboardSubmitted = useCallback(() => {
+    setSession((prev) => ({ ...prev, leaderboardSubmitted: true }))
   }, [])
 
   const eatenValue = useMemo(() => calcEatenValue(session.items), [session.items])
@@ -160,10 +176,14 @@ export function useMealSession() {
     () => session.items.reduce((sum, item) => sum + (item.count || 0), 0),
     [session.items],
   )
+  const isCompletable = pricePaidNumber > 0 && totalPieces > 0
 
   return {
     pricePaid: session.pricePaid,
     items: session.items,
+    clientMealId: session.clientMealId,
+    leaderboardSubmitted: session.leaderboardSubmitted,
+    visitorId,
     setPricePaid,
     adjustCount,
     updateItem,
@@ -172,9 +192,11 @@ export function useMealSession() {
     clearCounts,
     resetSession,
     replaceMenu,
+    markLeaderboardSubmitted,
     eatenValue,
     pricePaidNumber,
     worthIt,
     totalPieces,
+    isCompletable,
   }
 }

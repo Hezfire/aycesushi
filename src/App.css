@@ -660,6 +660,262 @@
   font-size: 0.8rem;
 }
 
+.page-status {
+  color: #d7ebe6;
+  padding: 2rem 0;
+}
+
+.app-footer__links {
+  margin-top: 0.65rem;
+  opacity: 0.9;
+}
+
+.lb-submit {
+  animation: rise-in 0.55s 0.24s ease-out both;
+}
+
+.lb-submit--success h2 {
+  margin: 0 0 0.35rem;
+  color: #f7f2e8;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+}
+
+.lb-submit__rank {
+  margin: 0;
+  color: #2db8a3;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.lb-submit__hint,
+.lb-submit__done {
+  margin: 0.45rem 0 0.85rem;
+  color: #b7d4ce;
+}
+
+.lb-submit__form,
+.lb-submit__form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.lb-submit__form {
+  gap: 0.7rem;
+  padding: 1rem 1.05rem;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  box-shadow: var(--shadow);
+}
+
+.lb-submit__form label span {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.lb-submit__form input {
+  min-height: var(--tap);
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  border: 2px solid rgba(11, 61, 58, 0.15);
+  background: #fff;
+  font: inherit;
+  color: var(--ink);
+}
+
+.lb-submit__row {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr;
+  gap: 0.55rem;
+}
+
+.lb-submit__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.lb-submit__actions .btn {
+  flex: 1;
+  min-width: 7rem;
+  text-align: center;
+  text-decoration: none;
+}
+
+.lb-share-card {
+  margin-top: 0.85rem;
+  padding: 1rem 1.05rem;
+  border-radius: var(--radius);
+  background: rgba(248, 244, 235, 0.94);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+.lb-share-card__eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.lb-share-card__title {
+  margin: 0.2rem 0 0.75rem;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+}
+
+.lb-share-card__stats {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.lb-share-card__stats li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.95rem;
+}
+
+.lb-share-card__stats .is-ahead {
+  color: var(--ok);
+}
+
+.lb-share-card__stats .is-behind {
+  color: var(--danger);
+}
+
+.lb-share-card__cta {
+  margin: 0 0 0.65rem;
+  font-weight: 700;
+  color: var(--sea);
+}
+
+.lb-share-card__note {
+  margin: 0.45rem 0 0;
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
+.lb-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+
+.lb-stats__card {
+  padding: 0.85rem 0.9rem;
+  border-radius: 14px;
+  background: rgba(248, 244, 235, 0.92);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.lb-stats__card span {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+.lb-stats__card strong {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+}
+
+.lb-empty {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.lb-preview-list,
+.lb-card-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.lb-preview-row,
+.lb-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--ink);
+}
+
+.lb-preview-row__rank,
+.lb-card__rank {
+  font-weight: 800;
+  min-width: 2rem;
+}
+
+.lb-preview-row__name,
+.lb-card__name {
+  flex: 1;
+  min-width: 0;
+}
+
+.lb-preview-row__beat,
+.lb-card__beat {
+  font-weight: 800;
+  color: var(--ok);
+}
+
+.lb-card__beat.is-behind {
+  color: var(--danger);
+}
+
+.lb-card--mine {
+  border: 2px solid rgba(26, 138, 122, 0.55);
+  background: #fff;
+}
+
+.lb-card__top {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+}
+
+.lb-card__meta {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}
+
+.lb-board .btn {
+  text-decoration: none;
+  text-align: center;
+}
+
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
 @keyframes rise-in {
   from {
     opacity: 0;
@@ -674,5 +930,9 @@
 @media (min-width: 640px) {
   .app {
     padding-top: 2rem;
+  }
+
+  .lb-stats {
+    grid-template-columns: repeat(4, 1fr);
   }
 }

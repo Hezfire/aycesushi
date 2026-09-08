@@ -1,15 +1,14 @@
 /**
- * App — main screen layout for the AYCE Sushi Worth-It Calculator.
- * Wire-up only; meal logic lives in useMealSession.
+ * App — main meal tracker screen.
  */
 
-import './App.css'
 import PriceInput from './components/PriceInput'
 import WorthItBanner from './components/WorthItBanner'
 import ImportMenuPanel from './components/ImportMenuPanel'
 import ItemList from './components/ItemList'
 import AddItemForm from './components/AddItemForm'
 import ShareSummary from './components/ShareSummary'
+import LeaderboardSubmit from './components/LeaderboardSubmit'
 import ResetButton from './components/ResetButton'
 import { useMealSession } from './hooks/useMealSession'
 
@@ -25,10 +24,15 @@ export default function App() {
     clearCounts,
     resetSession,
     replaceMenu,
+    markLeaderboardSubmitted,
     eatenValue,
     pricePaidNumber,
     worthIt,
     totalPieces,
+    isCompletable,
+    clientMealId,
+    visitorId,
+    leaderboardSubmitted,
   } = useMealSession()
 
   return (
@@ -64,6 +68,16 @@ export default function App() {
           pricePaid={pricePaidNumber}
           worthIt={worthIt}
         />
+        <LeaderboardSubmit
+          isCompletable={isCompletable}
+          alreadySubmitted={leaderboardSubmitted}
+          clientMealId={clientMealId}
+          visitorId={visitorId}
+          aycePricePaid={pricePaidNumber}
+          totalMenuValueEaten={eatenValue}
+          piecesEaten={totalPieces}
+          onSubmitted={markLeaderboardSubmitted}
+        />
         <ResetButton onClearCounts={clearCounts} onReset={resetSession} />
       </main>
 
@@ -73,6 +87,10 @@ export default function App() {
           for AYCE. Imported dish names come from the restaurant menu; dollar amounts are grocery
           estimates for table math—not official store or restaurant prices. Progress stays on this
           phone until you reset. Tap New meal if prices still look like an older session.
+        </p>
+        <p className="app-footer__links">
+          Finish a meal, then add yourself to a restaurant leaderboard — or open a board link you
+          were sent.
         </p>
       </footer>
     </div>

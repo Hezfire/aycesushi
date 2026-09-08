@@ -712,7 +712,7 @@ export default async function handler(req, res) {
       assertUsableMenuSource(menuText, { requirePrices })
     }
 
-    const items = await callGemini({
+    const items = await callGeminiWithGroceryFallback({
       menuText,
       sourceLabel,
       media,
